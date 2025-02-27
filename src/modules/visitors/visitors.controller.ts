@@ -11,7 +11,7 @@ export class VisitorsController {
     return this.visitorsService.findAll();
   }
 
-  @Post()
+  @Post('create')
   create(@Body() visitor: Partial<Visitor>): Promise<Visitor> {
     return this.visitorsService.create(visitor);
   }

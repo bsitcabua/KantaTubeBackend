@@ -14,7 +14,8 @@ export class VisitorsService {
     return this.visitorsRepository.find();
   }
 
-  async create(user: Partial<Visitor>): Promise<Visitor> {
-    return this.visitorsRepository.save(user);
+  async create(visitorData: Partial<Visitor>): Promise<Visitor> {
+    const visitor = this.visitorsRepository.create(visitorData);
+    return this.visitorsRepository.save(visitor);
   }
 }
