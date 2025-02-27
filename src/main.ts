@@ -7,21 +7,22 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   // Get environment variables
   const PORT = configService.get<number>('PORT') || 3000;
-  const ALLOWED_ORIGIN = configService.get<string>('CORS_ORIGIN') || 'http://localhost:4200';
-
-  // Enable CORS for frontend requests
+  const ALLOWED_ORIGINS = [
+    'http://localhost:4200',
+    'https://kantatube.vercel.app'
+  ];
   app.enableCors({
-    origin: ALLOWED_ORIGIN,
+    origin: ALLOWED_ORIGINS,
     methods: 'GET,POST,PUT,DELETE,OPTIONS',
     allowedHeaders: 'Content-Type, Authorization',
-    credentials: true, // Enable cookies if needed
+    credentials: true,
   });
-
+  
   // Set global API prefix for all routes
   app.setGlobalPrefix('api');
 
   // Log CORS settings & server status
-  console.log(`✅ CORS enabled for: ${ALLOWED_ORIGIN}`);
+  console.log(`✅ CORS enabled for: ${ALLOWED_ORIGINS}`);
   console.log(`🚀 Server running on http://localhost:${PORT}/api`);
   console.log(`App listening to: ${PORT}`);
   
