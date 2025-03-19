@@ -9,6 +9,7 @@ async function bootstrap() {
   const PORT = configService.get<number>('PORT') || 3000;
   const ALLOWED_ORIGINS = [
     'http://localhost:4200',
+    'http://192.168.1.18:4200',
     'https://kantatube.vercel.app'
   ];
   app.enableCors({
