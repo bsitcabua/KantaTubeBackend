@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { VisitorsModule } from './modules/visitors/visitors.module';
+import { SearchGateway } from './search.gateway';
 
 @Module({
+  providers: [SearchGateway],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true, // Makes the config available globally
