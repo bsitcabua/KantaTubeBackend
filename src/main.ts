@@ -10,7 +10,8 @@ async function bootstrap() {
   const ALLOWED_ORIGINS = [
     'http://localhost',
     'http://192.168.1.18',
-    'https://kantatube.vercel.app'
+    'https://kantatube.vercel.app',
+    'https://kantatube-git-staging-elvins-projects-39449bae.vercel.app'
   ];
   app.enableCors({
     origin: ALLOWED_ORIGINS,
