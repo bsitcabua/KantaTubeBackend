@@ -9,7 +9,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 
 @Injectable()
-@WebSocketGateway(4202, {
+@WebSocketGateway({
   cors: {
     origin: '*', // Change this to match your frontend domain
     methods: ['GET', 'POST'],
