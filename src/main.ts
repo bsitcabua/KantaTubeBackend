@@ -8,8 +8,9 @@ async function bootstrap() {
   // Get environment variables
   const PORT = configService.get<number>('PORT') || 3000;
   const ALLOWED_ORIGINS = [
+    `http://localhost:4200`,
     'http://localhost',
-    'http://192.168.1.18',
+    `http://192.168.1.18:4200`,
     'https://kantatube.vercel.app',
     'https://kantatube-git-staging-elvins-projects-39449bae.vercel.app'
   ];
