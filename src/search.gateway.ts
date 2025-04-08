@@ -9,8 +9,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 
 @Injectable()
-// @WebSocketGateway(4202,{ // remove for production 4202
-@WebSocketGateway({
+@WebSocketGateway(4202,{ // remove for production 4202
+// @WebSocketGateway({
   cors: {
     origin: '*', // Change this to match your frontend domain
     methods: ['GET', 'POST'],
@@ -29,7 +29,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleConnection(client: Socket) {
     const visitorID = this.getVisitorID(client);
     client.join(visitorID); // Join the room named after visitorID
-    this.logger.log(`✅ Client connected: ${client.id} (Guest ID: ${visitorID})`);
+    // this.logger.log(`✅ Client connected: ${client.id} (Guest ID: ${visitorID})`);
   }
 
   handleDisconnect(client: Socket) {
@@ -39,7 +39,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('getSongReserved')
   async getSongReserved(client: Socket, payload: { event: string }) {
     const visitorID = this.getVisitorID(client);
-    this.logger.log(`🔄 Guest ${visitorID} requested getSongReserved`);
+    // this.logger.log(`🔄 Guest ${visitorID} requested getSongReserved`);
     // Include visitorID in the payload before emitting
     this.server.emit('getSongReserved', { ...payload, visitorID });
   }
@@ -47,28 +47,28 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('reserveSong')
   async reserveSong(client: Socket, payload: { event: string }) {
     const visitorID = this.getVisitorID(client);
-    this.logger.log(`🔄 Guest ${visitorID} requested reserveSong`);
+    // this.logger.log(`🔄 Guest ${visitorID} requested reserveSong`);
     this.server.emit('reserveSong', { ...payload, visitorID });
   }
 
   @SubscribeMessage('nextSong')
   async nextSong(client: Socket, payload: { event: string }) {
     const visitorID = this.getVisitorID(client);
-    this.logger.log(`🔄 Guest ${visitorID} requested nextSong`);
+    // this.logger.log(`🔄 Guest ${visitorID} requested nextSong`);
     this.server.emit('nextSong', { ...payload, visitorID });
   }
 
   @SubscribeMessage('stopAllSong')
   async stopAllSong(client: Socket, payload: { event: string }) {
     const visitorID = this.getVisitorID(client);
-    this.logger.log(`🔄 Guest ${visitorID} requested stopAllSong`);
+    // this.logger.log(`🔄 Guest ${visitorID} requested stopAllSong`);
     this.server.emit('stopAllSong', { ...payload, visitorID });
   }
 
   @SubscribeMessage('onSearch')
   async onSearch(client: Socket, payload: { event: string }) {
     const visitorID = this.getVisitorID(client);
-    this.logger.log(`🔄 Guest ${visitorID} requested onSearch`);
+    // this.logger.log(`🔄 Guest ${visitorID} requested onSearch`);
     this.server.emit('onSearch', { ...payload, visitorID });
   }
 

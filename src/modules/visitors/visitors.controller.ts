@@ -4,8 +4,9 @@ import { Visitor } from './entities/visitor.entity';
 
 @Controller('visitors')
 export class VisitorsController {
-  constructor(private readonly visitorsService: VisitorsService) {}
 
+  constructor(private readonly visitorsService: VisitorsService) {}
+  
   @Get()
   findAll(): Promise<Visitor[]> {
     return this.visitorsService.findAll();
