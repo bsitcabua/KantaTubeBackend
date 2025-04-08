@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { VisitorsModule } from './modules/visitors/visitors.module';
 import { SearchGateway } from './search.gateway';
+import { SearchLogsModule } from './modules/search-logs/search-logs.module';
 
 @Module({
   providers: [SearchGateway],
@@ -21,6 +22,7 @@ import { SearchGateway } from './search.gateway';
       synchronize: false, // Set to false in production
     }),
     VisitorsModule,
+    SearchLogsModule,
   ],
 })
 export class AppModule {}
