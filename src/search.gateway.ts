@@ -9,7 +9,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 
 @Injectable()
-@WebSocketGateway(4202,{ // remove for production 4202
+@WebSocketGateway({ // remove for production 4202
 // @WebSocketGateway({
   cors: {
     origin: '*', // Change this to match your frontend domain
