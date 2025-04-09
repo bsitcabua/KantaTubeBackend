@@ -8,8 +8,10 @@ import {
 import { Injectable, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 
+const isProd = process.env.NODE_ENV === 'production';
+
 @Injectable()
-@WebSocketGateway({ // remove for production 4202
+@WebSocketGateway(isProd ? null : 4202,{ // remove for production 4202
 // @WebSocketGateway({
   cors: {
     origin: '*', // Change this to match your frontend domain
