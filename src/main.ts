@@ -13,7 +13,8 @@ async function bootstrap() {
     `http://192.168.1.18`,
     `http://192.168.1.4`,
     'https://kantatube.vercel.app',
-    'https://kantatube-git-staging-elvins-projects-39449bae.vercel.app'
+    'https://kantatube-git-staging-elvins-projects-39449bae.vercel.app',
+    'https://kantatube-git-development-elvins-projects-39449bae.vercel.app'
   ];
   app.enableCors({
     origin: ALLOWED_ORIGINS,
