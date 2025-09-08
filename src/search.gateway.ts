@@ -60,13 +60,28 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.emit('addPerformer', { ...payload, visitorID });
   }
 
-
   @SubscribeMessage('removePerformer')
   async removePerformer(client: Socket, payload: { event: string }) {
     const visitorID = this.getVisitorID(client);
     // this.logger.log(`🔄 Guest ${visitorID} requested removePerformer`);
     // Include visitorID in the payload before emitting
     this.server.emit('removePerformer', { ...payload, visitorID });
+  }
+
+  @SubscribeMessage('playVideo')
+  async playVideo(client: Socket, payload: { event: string }) {
+    const visitorID = this.getVisitorID(client);
+    // this.logger.log(`🔄 Guest ${visitorID} requested playVideo`);
+    // Include visitorID in the payload before emitting
+    this.server.emit('playVideo', { ...payload, visitorID });
+  }
+
+  @SubscribeMessage('pauseVideo')
+  async pauseVideo(client: Socket, payload: { event: string }) {
+    const visitorID = this.getVisitorID(client);
+    // this.logger.log(`🔄 Guest ${visitorID} requested pauseVideo`);
+    // Include visitorID in the payload before emitting
+    this.server.emit('pauseVideo', { ...payload, visitorID });
   }
 
   @SubscribeMessage('reserveSong')
