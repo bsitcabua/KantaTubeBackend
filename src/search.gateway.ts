@@ -68,6 +68,14 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.emit('removePerformer', { ...payload, visitorID });
   }
 
+  @SubscribeMessage('clearAllPerformers')
+  async clearAllPerformers(client: Socket, payload: { event: string }) {
+    const visitorID = this.getVisitorID(client);
+    // this.logger.log(`🔄 Guest ${visitorID} requested clearAllPerformers`);
+    // Include visitorID in the payload before emitting
+    this.server.emit('clearAllPerformers', { ...payload, visitorID });
+  }
+
   @SubscribeMessage('playVideo')
   async playVideo(client: Socket, payload: { event: string }) {
     const visitorID = this.getVisitorID(client);
