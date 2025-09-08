@@ -44,6 +44,22 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.emit('getSongReserved', { ...payload, visitorID });
   }
 
+  @SubscribeMessage('getPerformers')
+  async getPerformers(client: Socket, payload: { event: string }) {
+    const visitorID = this.getVisitorID(client);
+    // this.logger.log(`🔄 Guest ${visitorID} requested getPerformers`);
+    // Include visitorID in the payload before emitting
+    this.server.emit('getPerformers', { ...payload, visitorID });
+  }
+
+  @SubscribeMessage('addPerformer')
+  async addPerformer(client: Socket, payload: { event: string }) {
+    const visitorID = this.getVisitorID(client);
+    // this.logger.log(`🔄 Guest ${visitorID} requested addPerformer`);
+    // Include visitorID in the payload before emitting
+    this.server.emit('addPerformer', { ...payload, visitorID });
+  }
+
   @SubscribeMessage('reserveSong')
   async reserveSong(client: Socket, payload: { event: string }) {
     const visitorID = this.getVisitorID(client);
@@ -84,6 +100,13 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const visitorID = this.getVisitorID(client);
     this.logger.log(`🔄 Guest ${visitorID} sent songReserved`);
     this.server.emit('songReserved', { ...payload, visitorID });
+  }
+
+  @SubscribeMessage('performers')
+  async performers(client: Socket, payload: { event: string }) {
+    const visitorID = this.getVisitorID(client);
+    this.logger.log(`🔄 Guest ${visitorID} sent performers`);
+    this.server.emit('performers', { ...payload, visitorID });
   }
 
   /**
