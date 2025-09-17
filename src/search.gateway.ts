@@ -8,11 +8,16 @@ import {
 import { Injectable, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 
+type EventPayload = {
+  event: string;
+  [key: string]: unknown;
+};
+
 @Injectable()
 // @WebSocketGateway(4202,{ // remove for production 4202
 @WebSocketGateway({
   cors: {
-    origin: '*', // Change this to match your frontend domain
+    origin: process.env.FRONTEND_DOMAIN || '*',
     methods: ['GET', 'POST'],
   },
 })
@@ -26,137 +31,123 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return (client.handshake.query.visitorID as string) || client.id;
   }
 
-  handleConnection(client: Socket) {
+  private handleEvent(client: Socket, payload: EventPayload, eventName: string, shouldLog = false): void {
     const visitorID = this.getVisitorID(client);
-    client.join(visitorID); // Join the room named after visitorID
+    if (shouldLog) {
+      this.logger.log(`🔄 Guest ${visitorID} handled ${eventName}`);
+    }
+    this.server.emit(eventName, { ...payload, visitorID });
+  }
+
+  handleConnection(client: Socket): void {
+    const visitorID = this.getVisitorID(client);
+    client.join(visitorID);
     // this.logger.log(`✅ Client connected: ${client.id} (Guest ID: ${visitorID})`);
   }
 
-  handleDisconnect(client: Socket) {
+  handleDisconnect(client: Socket): void {
     this.logger.log(`❌ Client disconnected: ${client.id}`);
   }
 
+  // Request events (client to server)
   @SubscribeMessage('getSongReserved')
-  async getSongReserved(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    // this.logger.log(`🔄 Guest ${visitorID} requested getSongReserved`);
-    // Include visitorID in the payload before emitting
-    this.server.emit('getSongReserved', { ...payload, visitorID });
+  async getSongReserved(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'getSongReserved');
   }
 
   @SubscribeMessage('getPerformers')
-  async getPerformers(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    // this.logger.log(`🔄 Guest ${visitorID} requested getPerformers`);
-    // Include visitorID in the payload before emitting
-    this.server.emit('getPerformers', { ...payload, visitorID });
+  async getPerformers(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'getPerformers');
   }
 
   @SubscribeMessage('addPerformer')
-  async addPerformer(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    // this.logger.log(`🔄 Guest ${visitorID} requested addPerformer`);
-    // Include visitorID in the payload before emitting
-    this.server.emit('addPerformer', { ...payload, visitorID });
+  async addPerformer(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'addPerformer');
   }
 
   @SubscribeMessage('removePerformer')
-  async removePerformer(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    // this.logger.log(`🔄 Guest ${visitorID} requested removePerformer`);
-    // Include visitorID in the payload before emitting
-    this.server.emit('removePerformer', { ...payload, visitorID });
+  async removePerformer(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'removePerformer');
   }
 
   @SubscribeMessage('clearAllPerformers')
-  async clearAllPerformers(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    // this.logger.log(`🔄 Guest ${visitorID} requested clearAllPerformers`);
-    // Include visitorID in the payload before emitting
-    this.server.emit('clearAllPerformers', { ...payload, visitorID });
+  async clearAllPerformers(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'clearAllPerformers');
   }
 
   @SubscribeMessage('playVideo')
-  async playVideo(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    // this.logger.log(`🔄 Guest ${visitorID} requested playVideo`);
-    // Include visitorID in the payload before emitting
-    this.server.emit('playVideo', { ...payload, visitorID });
+  async playVideo(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'playVideo');
   }
 
   @SubscribeMessage('pauseVideo')
-  async pauseVideo(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    // this.logger.log(`🔄 Guest ${visitorID} requested pauseVideo`);
-    // Include visitorID in the payload before emitting
-    this.server.emit('pauseVideo', { ...payload, visitorID });
+  async pauseVideo(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'pauseVideo');
   }
 
   @SubscribeMessage('reserveSong')
-  async reserveSong(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    // this.logger.log(`🔄 Guest ${visitorID} requested reserveSong`);
-    this.server.emit('reserveSong', { ...payload, visitorID });
+  async reserveSong(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'reserveSong');
   }
 
   @SubscribeMessage('nextSong')
-  async nextSong(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    // this.logger.log(`🔄 Guest ${visitorID} requested nextSong`);
-    this.server.emit('nextSong', { ...payload, visitorID });
+  async nextSong(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'nextSong');
   }
 
   @SubscribeMessage('stopAllSong')
-  async stopAllSong(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    // this.logger.log(`🔄 Guest ${visitorID} requested stopAllSong`);
-    this.server.emit('stopAllSong', { ...payload, visitorID });
+  async stopAllSong(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'stopAllSong');
   }
 
   @SubscribeMessage('onSearch')
-  async onSearch(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    // this.logger.log(`🔄 Guest ${visitorID} requested onSearch`);
-    this.server.emit('onSearch', { ...payload, visitorID });
+  async onSearch(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'onSearch');
   }
 
-  // =======================================================================================
+  @SubscribeMessage('toggleScore')
+  async toggleScore(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'toggleScore');
+  }
 
-  /**
-   * Handles song reservation events.
-   * @param client The socket client
-   * @param payload Contains reservation details
-   */
+  @SubscribeMessage('toggleThemeMode')
+  async toggleThemeMode(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'toggleThemeMode');
+  }
+
+  @SubscribeMessage('updatePrimaryColor')
+  async updatePrimaryColor(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'updatePrimaryColor');
+  }
+
+  @SubscribeMessage('updateKey')
+  async updateKey(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'updateKey');
+  }
+
+  // Response events (server to client)
   @SubscribeMessage('songReserved')
-  async songReserved(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    this.logger.log(`🔄 Guest ${visitorID} sent songReserved`);
-    this.server.emit('songReserved', { ...payload, visitorID });
+  async songReserved(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'songReserved', true);
   }
 
   @SubscribeMessage('performers')
-  async performers(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    this.logger.log(`🔄 Guest ${visitorID} sent performers`);
-    this.server.emit('performers', { ...payload, visitorID });
+  async performers(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'performers', true);
   }
 
-  /**
-   * Handles song reservation events.
-   * @param client The socket client
-   * @param payload Contains reservation details
-   */
   @SubscribeMessage('videoStatus')
-  async videoStatus(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    this.logger.log(`🔄 Guest ${visitorID} sent videoStatus`);
-    this.server.emit('videoStatus', { ...payload, visitorID });
+  async videoStatus(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'videoStatus', true);
   }
 
   @SubscribeMessage('searchResults')
-  async searchResults(client: Socket, payload: { event: string }) {
-    const visitorID = this.getVisitorID(client);
-    this.logger.log(`🔄 Guest ${visitorID} sent searchResults`);
-    this.server.emit('searchResults', { ...payload, visitorID });
+  async searchResults(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'searchResults', true);
+  }
+
+  @SubscribeMessage('response')
+  async response(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'response', true);
   }
 }
