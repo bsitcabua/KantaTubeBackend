@@ -27,13 +27,15 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(SearchGateway.name);
 
+  private readonly shouldLogEvents = process.env.NODE_ENV !== 'production';
+
   private getVisitorID(client: Socket): string {
     return (client.handshake.query.visitorID as string) || client.id;
   }
 
-  private handleEvent(client: Socket, payload: EventPayload, eventName: string, shouldLog = false): void {
+  private handleEvent(client: Socket, payload: EventPayload, eventName: string): void {
     const visitorID = this.getVisitorID(client);
-    if (shouldLog) {
+    if (this.shouldLogEvents) {
       this.logger.log(`🔄 Guest ${visitorID} handled ${eventName}`);
     }
     this.server.emit(eventName, { ...payload, visitorID });
@@ -128,31 +130,41 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // Response events (server to client)
   @SubscribeMessage('songReserved')
   async songReserved(client: Socket, payload: EventPayload) {
-    this.handleEvent(client, payload, 'songReserved', true);
+    this.handleEvent(client, payload, 'songReserved');
   }
 
   @SubscribeMessage('performers')
   async performers(client: Socket, payload: EventPayload) {
-    this.handleEvent(client, payload, 'performers', true);
+    this.handleEvent(client, payload, 'performers');
   }
 
   @SubscribeMessage('videoStatus')
   async videoStatus(client: Socket, payload: EventPayload) {
-    this.handleEvent(client, payload, 'videoStatus', true);
+    this.handleEvent(client, payload, 'videoStatus');
   }
 
   @SubscribeMessage('searchResults')
   async searchResults(client: Socket, payload: EventPayload) {
-    this.handleEvent(client, payload, 'searchResults', true);
+    this.handleEvent(client, payload, 'searchResults');
   }
 
   @SubscribeMessage('toggleScoreFromMain')
   async toggleScoreFromMain(client: Socket, payload: EventPayload) {
-    this.handleEvent(client, payload, 'toggleScoreFromMain', true);
+    this.handleEvent(client, payload, 'toggleScoreFromMain');
+  }
+
+  @SubscribeMessage('toggleThemeModeFromMain')
+  async toggleThemeModeFromMain(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'toggleThemeModeFromMain');
+  }
+
+  @SubscribeMessage('updatePrimaryColorFromMain')
+  async updatePrimaryColorFromMain(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'updatePrimaryColorFromMain');
   }
 
   @SubscribeMessage('response')
   async response(client: Socket, payload: EventPayload) {
-    this.handleEvent(client, payload, 'response', true);
+    this.handleEvent(client, payload, 'response');
   }
 }
