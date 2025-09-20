@@ -146,6 +146,11 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.handleEvent(client, payload, 'searchResults', true);
   }
 
+  @SubscribeMessage('toggleScoreFromMain')
+  async toggleScoreFromMain(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'toggleScoreFromMain', true);
+  }
+
   @SubscribeMessage('response')
   async response(client: Socket, payload: EventPayload) {
     this.handleEvent(client, payload, 'response', true);
