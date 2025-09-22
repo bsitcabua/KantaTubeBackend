@@ -12,6 +12,14 @@ export class VisitorsController {
     return this.visitorsService.findAll();
   }
 
+  @Get('connecting')
+  async connecting(): Promise<{ success: boolean; status: number }> {
+    return {
+      success: true,
+      status: 200,
+    };
+  }
+
   @Post('create')
   create(@Body() visitor: Partial<Visitor>): Promise<Visitor> {
     return this.visitorsService.create(visitor);
