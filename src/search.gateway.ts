@@ -163,6 +163,11 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.handleEvent(client, payload, 'updatePrimaryColorFromMain');
   }
 
+  @SubscribeMessage('updateKeyFromMain')
+  async updateKeyFromMain(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'updateKeyFromMain');
+  }
+
   @SubscribeMessage('response')
   async response(client: Socket, payload: EventPayload) {
     this.handleEvent(client, payload, 'response');
