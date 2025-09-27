@@ -122,6 +122,16 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.handleEvent(client, payload, 'updatePrimaryColor');
   }
 
+  @SubscribeMessage('updatePresets')
+  async updatePresets(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'updatePresets');
+  }
+
+  @SubscribeMessage('updateMenuMode')
+  async updateMenuMode(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'updateMenuMode');
+  }
+
   @SubscribeMessage('updateKey')
   async updateKey(client: Socket, payload: EventPayload) {
     this.handleEvent(client, payload, 'updateKey');
@@ -166,6 +176,16 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('updateKeyFromMain')
   async updateKeyFromMain(client: Socket, payload: EventPayload) {
     this.handleEvent(client, payload, 'updateKeyFromMain');
+  }
+
+  @SubscribeMessage('updatePresetsFromMain')
+  async updatePresetsFromMain(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'updatePresetsFromMain');
+  }
+
+  @SubscribeMessage('updateMenuModeFromMain')
+  async updateMenuModeFromMain(client: Socket, payload: EventPayload) {
+    this.handleEvent(client, payload, 'updateMenuModeFromMain');
   }
 
   @SubscribeMessage('response')
