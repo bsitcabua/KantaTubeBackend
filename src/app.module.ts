@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { VisitorsModule } from './modules/visitors/visitors.module';
 import { SearchGateway } from './search.gateway';
 import { SearchLogsModule } from './modules/search-logs/search-logs.module';
+import { BugReportModule } from './modules/bug-report/bug-report.module';
 
 @Module({
   providers: [SearchGateway],
@@ -23,6 +24,7 @@ import { SearchLogsModule } from './modules/search-logs/search-logs.module';
     }),
     VisitorsModule,
     SearchLogsModule,
+    BugReportModule,
   ],
 })
 export class AppModule {}
