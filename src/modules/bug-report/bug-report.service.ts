@@ -15,16 +15,19 @@ export class BugReportService {
         return this.bugReportRepo.find();
     }
     
-    async create(payload: any): Promise<BugReport> {
+    async create(payload: any, file?: any): Promise<BugReport> {
+        // Build the URL/path where the file is stored
+        const finalScreenshotUrl = file ? `/uploads/bug-reports/${file.filename}` : null;
         
         const data = this.bugReportRepo.create({
             name: payload.name,
             email: payload.email,
             description: payload.description,
             steps: payload.steps,
-            broswer_device: payload.browserDevice, // Mapping the Angular payload property 'browserDevice' to entity 'broswer_device'
-            screenshot_url: payload.screenshotUrl, // Extracting the string URL from the Angular safe URL object
+            broswer_device: payload.browserDevice, 
+            screenshot_url: finalScreenshotUrl, // Set the clean generated URL!
         });
+        
         return this.bugReportRepo.save(data);
     }
 }

@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
+import { urlencoded, json } from 'express'; // MUST IMPORT THIS
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -22,6 +23,10 @@ async function bootstrap() {
     allowedHeaders: 'Content-Type, Authorization',
     credentials: true,
   });
+
+  // ADD THIS to allow payloads up to 50mb (or larger)
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
   
   // Set global API prefix for all routes
   app.setGlobalPrefix('api');
