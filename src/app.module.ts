@@ -25,17 +25,12 @@ import { join } from 'path';
       username: process.env.DB_USERNAME || 'root',
       password: process.env.DB_PASSWORD || '',
       database: process.env.DB_NAME || 'kantatube',
-      ssl: {
-        minVersion: 'TLSv1.2',
-        rejectUnauthorized: false,
-      },
-
       extra: {
         ssl: {
+          minVersion: 'TLSv1.2',
           rejectUnauthorized: false,
         },
       },
-
       autoLoadEntities: true,
       synchronize: false, // Set to false in production
     }),
