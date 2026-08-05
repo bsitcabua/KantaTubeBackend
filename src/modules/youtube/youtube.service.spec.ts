@@ -1,11 +1,13 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { YoutubePersonalKeyService } from './youtube-personal-key.service';
 import { YoutubeService } from './youtube.service';
 
 describe('YoutubeService', () => {
   const apiKey = 'server-only-test-key';
   const backupApiKey = 'server-only-backup-test-key';
   let service: YoutubeService;
+  let personalKeyService: YoutubePersonalKeyService;
   let fetchMock: jest.SpiedFunction<typeof fetch>;
 
   beforeEach(() => {
@@ -19,7 +21,8 @@ describe('YoutubeService', () => {
     const configService = {
       get: jest.fn((name: string) => configValues[name]),
     } as unknown as ConfigService;
-    service = new YoutubeService(configService);
+    personalKeyService = new YoutubePersonalKeyService(configService);
+    service = new YoutubeService(configService, personalKeyService);
     fetchMock = jest.spyOn(global, 'fetch');
   });
 
@@ -54,7 +57,9 @@ describe('YoutubeService', () => {
     const parsedUrl = new URL(requestUrl);
     expect(parsedUrl.searchParams.get('q')).toBe('test song Karaoke');
     expect(parsedUrl.searchParams.get('key')).toBe(apiKey);
-    expect(parsedUrl.searchParams.get('maxResults')).toBe('50');
+    expect(parsedUrl.searchParams.get('maxResults')).toBe('20');
+    expect(parsedUrl.searchParams.get('videoEmbeddable')).toBe('true');
+    expect(parsedUrl.searchParams.get('videoSyndicated')).toBe('true');
   });
 
   it('returns aliases without returning API key values', () => {
@@ -78,6 +83,42 @@ describe('YoutubeService', () => {
 
     const requestUrl = String(fetchMock.mock.calls[0][0]);
     expect(new URL(requestUrl).searchParams.get('key')).toBe(backupApiKey);
+  });
+
+  it('uses a personal key only for the exact matching visitor ID', async () => {
+    const visitorId = '123e4567-e89b-42d3-a456-426614174000';
+    const otherVisitorId = '123e4567-e89b-42d3-a456-426614174001';
+    const personalKey = `AIza${'a'.repeat(35)}`;
+    personalKeyService.register(visitorId, personalKey);
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    expect(service.getKeyAliases(visitorId).aliases).toContain(
+      YoutubePersonalKeyService.alias,
+    );
+    expect(service.getKeyAliases(otherVisitorId).aliases).not.toContain(
+      YoutubePersonalKeyService.alias,
+    );
+
+    await service.search(
+      'personal test',
+      YoutubePersonalKeyService.alias,
+      visitorId,
+    );
+    const requestUrl = String(fetchMock.mock.calls[0][0]);
+    expect(new URL(requestUrl).searchParams.get('key')).toBe(personalKey);
+
+    await expect(
+      service.search(
+        'wrong visitor',
+        YoutubePersonalKeyService.alias,
+        otherVisitorId,
+      ),
+    ).rejects.toMatchObject({ status: 404 });
   });
 
   it('rejects an alias that is not configured', async () => {
@@ -190,7 +231,8 @@ describe('YoutubeService', () => {
     const configService = {
       get: jest.fn().mockReturnValue(undefined),
     } as unknown as ConfigService;
-    service = new YoutubeService(configService);
+    personalKeyService = new YoutubePersonalKeyService(configService);
+    service = new YoutubeService(configService, personalKeyService);
 
     await expect(service.search('test')).rejects.toBeInstanceOf(
       ServiceUnavailableException,

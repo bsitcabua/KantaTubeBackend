@@ -30,25 +30,57 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly shouldLogEvents = process.env.NODE_ENV !== 'production';
 
   private getVisitorID(client: Socket): string {
-    return (client.handshake.query.visitorID as string) || client.id;
+    const authVisitorId = client.handshake.auth?.visitorID;
+    const queryVisitorId = client.handshake.query.visitorID;
+    const visitorId =
+      typeof authVisitorId === 'string'
+        ? authVisitorId
+        : typeof queryVisitorId === 'string'
+          ? queryVisitorId
+          : '';
+    return this.isValidVisitorID(visitorId) ? visitorId : '';
   }
 
   private handleEvent(client: Socket, payload: EventPayload, eventName: string): void {
     const visitorID = this.getVisitorID(client);
+    if (!visitorID) {
+      client.disconnect(true);
+      return;
+    }
+
+    const payloadVisitorID = payload?.visitorID;
+    if (
+      typeof payloadVisitorID === 'string' &&
+      payloadVisitorID !== visitorID
+    ) {
+      this.logger.warn(`Rejected ${eventName} with a mismatched visitor ID.`);
+      return;
+    }
     if (this.shouldLogEvents) {
       this.logger.log(`🔄 Guest ${visitorID} handled ${eventName}`);
     }
-    this.server.emit(eventName, { ...payload, visitorID });
+    this.server.to(visitorID).emit(eventName, { ...payload, visitorID });
   }
 
   handleConnection(client: Socket): void {
     const visitorID = this.getVisitorID(client);
+    if (!visitorID) {
+      this.logger.warn('Rejected a WebSocket connection without a valid visitor ID.');
+      client.disconnect(true);
+      return;
+    }
     client.join(visitorID);
     // this.logger.log(`✅ Client connected: ${client.id} (Guest ID: ${visitorID})`);
   }
 
   handleDisconnect(client: Socket): void {
     this.logger.log(`❌ Client disconnected: ${client.id}`);
+  }
+
+  private isValidVisitorID(visitorID: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      visitorID.trim(),
+    );
   }
 
   // Request events (client to server)

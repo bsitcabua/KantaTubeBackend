@@ -15,6 +15,7 @@ import {
   YoutubeSearchItem,
   YoutubeSearchResponse,
 } from './youtube.types';
+import { YoutubePersonalKeyService } from './youtube-personal-key.service';
 
 @Injectable()
 export class YoutubeService {
@@ -23,9 +24,12 @@ export class YoutubeService {
     'https://www.googleapis.com/youtube/v3/search';
   private readonly requestTimeoutMs = 10000;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly personalKeyService: YoutubePersonalKeyService,
+  ) {}
 
-  getKeyAliases(): YoutubeKeyAliasesResponse {
+  getKeyAliases(visitorId?: string): YoutubeKeyAliasesResponse {
     const configuredKeys = this.getConfiguredApiKeys();
     const aliases = Object.keys(configuredKeys);
 
@@ -38,11 +42,17 @@ export class YoutubeService {
           ? configuredDefault
           : aliases[0];
 
-      return { aliases, defaultAlias };
+      return {
+        aliases: this.withPersonalAlias(aliases, visitorId),
+        defaultAlias,
+      };
     }
 
     if (this.configService.get<string>('YOUTUBE_API_KEY')?.trim()) {
-      return { aliases: ['default'], defaultAlias: 'default' };
+      return {
+        aliases: this.withPersonalAlias(['default'], visitorId),
+        defaultAlias: 'default',
+      };
     }
 
     this.throwMissingKeyConfiguration();
@@ -51,9 +61,10 @@ export class YoutubeService {
   async search(
     searchQuery: string,
     requestedKeyAlias?: string,
+    visitorId?: string,
   ): Promise<YoutubeSearchResponse> {
     const normalizedQuery = this.normalizeQuery(searchQuery);
-    const apiKey = this.resolveApiKey(requestedKeyAlias);
+    const apiKey = this.resolveApiKey(requestedKeyAlias, visitorId);
 
     const effectiveQuery = normalizedQuery.toLowerCase().includes('karaoke')
       ? normalizedQuery
@@ -66,6 +77,7 @@ export class YoutubeService {
       maxResults: '20',
       type: 'video',
       videoEmbeddable: 'true',
+      videoSyndicated: 'true',
       key: apiKey,
     });
     const controller = new AbortController();
@@ -141,7 +153,14 @@ export class YoutubeService {
     return normalized;
   }
 
-  private resolveApiKey(requestedAlias?: string): string {
+  private resolveApiKey(
+    requestedAlias?: string,
+    visitorId?: string,
+  ): string {
+    if (requestedAlias?.trim() === YoutubePersonalKeyService.alias) {
+      return this.personalKeyService.resolve(visitorId ?? '');
+    }
+
     const configuredKeys = this.getConfiguredApiKeys();
     const aliases = Object.keys(configuredKeys);
 
@@ -177,6 +196,15 @@ export class YoutubeService {
     }
 
     this.throwMissingKeyConfiguration();
+  }
+
+  private withPersonalAlias(
+    aliases: string[],
+    visitorId?: string,
+  ): string[] {
+    return this.personalKeyService.has(visitorId)
+      ? [...aliases, YoutubePersonalKeyService.alias]
+      : aliases;
   }
 
   private getConfiguredApiKeys(): Record<string, string> {
@@ -292,24 +320,40 @@ export class YoutubeService {
       });
     }
 
-    const isKeyRestrictionMismatch =
-      hasReason(
-        'ipRefererBlocked',
-        'API_KEY_HTTP_REFERRER_BLOCKED',
-        'API_KEY_IP_ADDRESS_BLOCKED',
-        'API_KEY_SERVICE_BLOCKED',
-      ) ||
+    const isHttpReferrerBlocked =
+      hasReason('ipRefererBlocked', 'API_KEY_HTTP_REFERRER_BLOCKED') ||
       normalizedMessage.includes('requests from referer') ||
-      normalizedMessage.includes('application restriction') ||
+      normalizedMessage.includes('http referrer');
+    const isIpAddressBlocked = hasReason('API_KEY_IP_ADDRESS_BLOCKED');
+    const isServiceBlocked =
+      hasReason('API_KEY_SERVICE_BLOCKED') ||
       normalizedMessage.includes('api key service restrictions');
+    const isApplicationRestrictionBlocked = normalizedMessage.includes(
+      'application restriction',
+    );
+    const isKeyRestrictionMismatch =
+      isHttpReferrerBlocked ||
+      isIpAddressBlocked ||
+      isServiceBlocked ||
+      isApplicationRestrictionBlocked;
     if (isKeyRestrictionMismatch) {
       this.logger.error(
-        'YouTube rejected the selected API key because its restrictions do not allow this backend request.',
+        `YouTube rejected the selected API key restriction; status ${status}; reason(s): ${
+          normalizedReasons.join(', ') || 'restriction mismatch'
+        }.`,
       );
+
+      const message = isHttpReferrerBlocked
+        ? 'This YouTube API key is restricted to browser referrers and cannot be used by the backend.'
+        : isIpAddressBlocked
+          ? 'This YouTube API key does not allow requests from the backend server IP address.'
+          : isServiceBlocked
+            ? 'This API key does not allow YouTube Data API v3. Update its API restrictions in Google Cloud Console.'
+            : 'Google rejected this API key because its application restrictions do not allow the backend request.';
+
       throw new ServiceUnavailableException({
         code: 'youtube_key_restricted',
-        message:
-          'The selected YouTube API key restrictions do not allow backend requests. Configure it as a server key.',
+        message,
       });
     }
 
