@@ -7,6 +7,7 @@ import { SearchLogsModule } from './modules/search-logs/search-logs.module';
 import { BugReportModule } from './modules/bug-report/bug-report.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
+import { YoutubeModule } from './modules/youtube/youtube.module';
 
 @Module({
   providers: [SearchGateway],
@@ -37,6 +38,7 @@ import { join } from 'path';
     VisitorsModule,
     SearchLogsModule,
     BugReportModule,
+    YoutubeModule,
   ],
 })
 export class AppModule {}
