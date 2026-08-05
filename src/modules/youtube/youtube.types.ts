@@ -24,6 +24,19 @@ export interface YoutubeKeyAliasesResponse {
   defaultAlias: string;
 }
 
+export interface YoutubePersonalKeyRequest {
+  apiKey: string;
+}
+
+export interface YoutubePersonalKeyStatusResponse {
+  available: boolean;
+  alias: string;
+}
+
+export interface YoutubePersonalKeyDeleteResponse {
+  removed: boolean;
+}
+
 export interface YoutubeApiError {
   message?: string;
   status?: string;
