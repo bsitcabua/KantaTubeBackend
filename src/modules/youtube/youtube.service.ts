@@ -63,7 +63,7 @@ export class YoutubeService {
       q: effectiveQuery,
       fields:
         'items(id/videoId,snippet(title,description,thumbnails/medium/url))',
-      maxResults: '50',
+      maxResults: '20',
       type: 'video',
       videoEmbeddable: 'true',
       key: apiKey,

@@ -11,6 +11,8 @@ async function bootstrap() {
   const ALLOWED_ORIGINS = [
     `http://localhost:4200`,
     'http://localhost',
+    'http://192.168.254.103:4200',
+    'http://192.168.254.103',
     `http://192.168.1.18`,
     `http://192.168.1.4`,
     'https://kantatube.vercel.app',
