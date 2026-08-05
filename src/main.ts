@@ -2,9 +2,11 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { urlencoded, json } from 'express'; // MUST IMPORT THIS
+import { NestExpressApplication } from '@nestjs/platform-express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.set('trust proxy', 1);
   const configService = app.get(ConfigService);
   // Get environment variables
   const PORT = configService.get<number>('PORT') || 3000;
@@ -15,6 +17,7 @@ async function bootstrap() {
     'http://192.168.254.103',
     `http://192.168.1.18`,
     `http://192.168.1.4`,
+    'http://192.168.254.103:4200',
     'https://kantatube.vercel.app',
     'https://kantatube-git-staging-elvins-projects-39449bae.vercel.app',
     'https://kantatube-git-development-elvins-projects-39449bae.vercel.app'
@@ -22,7 +25,7 @@ async function bootstrap() {
   app.enableCors({
     origin: ALLOWED_ORIGINS,
     methods: 'GET,POST,PUT,DELETE,OPTIONS',
-    allowedHeaders: 'Content-Type, Authorization',
+    allowedHeaders: 'Content-Type, Authorization, X-KantaTube-Visitor-ID',
     credentials: true,
   });
 
