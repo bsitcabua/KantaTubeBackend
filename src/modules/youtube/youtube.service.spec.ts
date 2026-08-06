@@ -1,6 +1,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { YoutubePersonalKeyService } from './youtube-personal-key.service';
+import { YoutubeSearchCacheService } from './youtube-search-cache.service';
 import { YoutubeService } from './youtube.service';
 
 describe('YoutubeService', () => {
@@ -8,6 +9,7 @@ describe('YoutubeService', () => {
   const backupApiKey = 'server-only-backup-test-key';
   let service: YoutubeService;
   let personalKeyService: YoutubePersonalKeyService;
+  let searchCacheService: YoutubeSearchCacheService;
   let fetchMock: jest.SpiedFunction<typeof fetch>;
 
   beforeEach(() => {
@@ -22,7 +24,12 @@ describe('YoutubeService', () => {
       get: jest.fn((name: string) => configValues[name]),
     } as unknown as ConfigService;
     personalKeyService = new YoutubePersonalKeyService(configService);
-    service = new YoutubeService(configService, personalKeyService);
+    searchCacheService = new YoutubeSearchCacheService(configService);
+    service = new YoutubeService(
+      configService,
+      personalKeyService,
+      searchCacheService,
+    );
     fetchMock = jest.spyOn(global, 'fetch');
   });
 
@@ -69,6 +76,20 @@ describe('YoutubeService', () => {
     });
     expect(JSON.stringify(service.getKeyAliases())).not.toContain(apiKey);
     expect(JSON.stringify(service.getKeyAliases())).not.toContain(backupApiKey);
+  });
+
+  it('reuses a cached response for equivalent normalized searches', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await service.search('  Disco   Karaoke  ');
+    await service.search('disco karaoke');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('uses the manually selected key alias', async () => {
@@ -232,7 +253,12 @@ describe('YoutubeService', () => {
       get: jest.fn().mockReturnValue(undefined),
     } as unknown as ConfigService;
     personalKeyService = new YoutubePersonalKeyService(configService);
-    service = new YoutubeService(configService, personalKeyService);
+    searchCacheService = new YoutubeSearchCacheService(configService);
+    service = new YoutubeService(
+      configService,
+      personalKeyService,
+      searchCacheService,
+    );
 
     await expect(service.search('test')).rejects.toBeInstanceOf(
       ServiceUnavailableException,
