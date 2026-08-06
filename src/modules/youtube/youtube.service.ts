@@ -16,6 +16,7 @@ import {
   YoutubeSearchResponse,
 } from './youtube.types';
 import { YoutubePersonalKeyService } from './youtube-personal-key.service';
+import { YoutubeSearchCacheService } from './youtube-search-cache.service';
 
 @Injectable()
 export class YoutubeService {
@@ -27,6 +28,7 @@ export class YoutubeService {
   constructor(
     private readonly configService: ConfigService,
     private readonly personalKeyService: YoutubePersonalKeyService,
+    private readonly searchCacheService: YoutubeSearchCacheService,
   ) {}
 
   getKeyAliases(visitorId?: string): YoutubeKeyAliasesResponse {
@@ -69,6 +71,16 @@ export class YoutubeService {
     const effectiveQuery = normalizedQuery.toLowerCase().includes('karaoke')
       ? normalizedQuery
       : `${normalizedQuery} Karaoke`;
+
+    return this.searchCacheService.getOrCreate(effectiveQuery, () =>
+      this.fetchSearch(effectiveQuery, apiKey),
+    );
+  }
+
+  private async fetchSearch(
+    effectiveQuery: string,
+    apiKey: string,
+  ): Promise<YoutubeSearchResponse> {
     const params = new URLSearchParams({
       part: 'snippet',
       q: effectiveQuery,
