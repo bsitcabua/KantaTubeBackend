@@ -8,6 +8,8 @@ import { BugReportModule } from './modules/bug-report/bug-report.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 import { YoutubeModule } from './modules/youtube/youtube.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { getDatabaseOptions } from './database/database.config';
 
 @Module({
   providers: [SearchGateway],
@@ -19,26 +21,12 @@ import { YoutubeModule } from './modules/youtube/youtube.module';
     ConfigModule.forRoot({
       isGlobal: true, // Makes the config available globally
     }),
-    TypeOrmModule.forRoot({
-      type: 'mysql', // Change to 'mysql' if using MySQL
-      host: process.env.DB_HOST || 'localhost',
-      port: Number(process.env.DB_PORT) || 4000,
-      username: process.env.DB_USERNAME || 'root',
-      password: process.env.DB_PASSWORD || '',
-      database: process.env.DB_NAME || 'kantatube',
-      extra: {
-        ssl: {
-          minVersion: 'TLSv1.2',
-          rejectUnauthorized: false,
-        },
-      },
-      autoLoadEntities: true,
-      synchronize: false, // Set to false in production
-    }),
+    TypeOrmModule.forRoot(getDatabaseOptions()),
     VisitorsModule,
     SearchLogsModule,
     BugReportModule,
     YoutubeModule,
+    AuthModule,
   ],
 })
 export class AppModule {}
