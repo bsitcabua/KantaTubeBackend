@@ -40,6 +40,12 @@ describe('AuthService', () => {
       findOne: jest.fn(async () => options.attempt || null),
       delete: jest.fn(),
     };
+    const passwordOtps = {
+      create: jest.fn((value) => value),
+      save: jest.fn(async (value) => value),
+      findOne: jest.fn(),
+      delete: jest.fn(),
+    };
     const google = {
       getAuthorizationUrl: jest.fn(() => 'https://accounts.google.test/auth'),
       exchangeCode: jest.fn(async () => profile),
@@ -57,11 +63,12 @@ describe('AuthService', () => {
       accounts as any,
       sessions as any,
       attempts as any,
+      passwordOtps as any,
       google as any,
       facebook as any,
       config,
     );
-    return { service, users, accounts, sessions, attempts, google, facebook };
+    return { service, users, accounts, sessions, attempts, passwordOtps, google, facebook };
   }
 
   it('creates a local user and hashed session for a new Google identity', async () => {
@@ -139,5 +146,21 @@ describe('AuthService', () => {
     await expect(
       context.service.authenticate('expired-token'),
     ).resolves.toBeNull();
+  });
+
+  it('rejects reusing the current password during a password reset', async () => {
+    const context = setup();
+    const currentPassword = 'StrongPassword123!';
+    const passwordHash = await (context.service as any).hashPassword(currentPassword);
+    context.passwordOtps.findOne.mockResolvedValue({
+      id: 'otp-1',
+      userId: 'user-1',
+      verificationTokenExpiresAt: new Date(Date.now() + 60_000),
+    });
+    context.users.findOne.mockResolvedValue({ id: 'user-1', passwordHash });
+
+    await expect(context.service.resetPassword('valid-token', currentPassword))
+      .rejects.toThrow('Your new password cannot be the same as your current password.');
+    expect(context.users.save).not.toHaveBeenCalled();
   });
 });

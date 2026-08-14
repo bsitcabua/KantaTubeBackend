@@ -20,7 +20,7 @@ async function bootstrap() {
     .filter(Boolean);
   app.enableCors({
     origin: ALLOWED_ORIGINS,
-    methods: 'GET,POST,PUT,DELETE,OPTIONS',
+    methods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
     allowedHeaders: 'Content-Type, Authorization, X-KantaTube-Visitor-ID',
     credentials: true,
   });

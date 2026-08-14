@@ -30,8 +30,29 @@ export class User {
   @Column({ type: 'boolean', default: false })
   emailVerified: boolean;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  passwordHash: string | null;
+
   @Column({ type: 'varchar', length: 2048, nullable: true })
   avatarUrl: string | null;
+
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  phoneNumber: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  addressLine: string | null;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  city: string | null;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  province: string | null;
+
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  postalCode: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  country: string | null;
 
   @Column({ type: 'enum', enum: UserStatus, default: UserStatus.ACTIVE })
   status: UserStatus;

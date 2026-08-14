@@ -16,4 +16,10 @@ export interface CurrentUserResponse {
   emailVerified: boolean;
   avatarUrl: string | null;
   providers: AuthProvider[];
+  phoneNumber?: string | null;
+  addressLine?: string | null;
+  city?: string | null;
+  province?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
 }

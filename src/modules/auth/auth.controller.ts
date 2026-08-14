@@ -1,9 +1,11 @@
 import {
   Controller,
+  Body,
   Get,
   Headers,
   Logger,
   Post,
+  Patch,
   Query,
   Redirect,
   Req,
@@ -42,6 +44,18 @@ export class AuthController {
       returnPath,
     );
     return { url: result.authorizationUrl, statusCode: 302 };
+  }
+
+  @Get('google/url')
+  @UseGuards(OAuthRateLimitGuard)
+  async googleUrl(@Query('returnPath') returnPath?: string) {
+    return this.auth.startLogin(AuthProvider.GOOGLE, returnPath);
+  }
+
+  @Get('facebook/url')
+  @UseGuards(OAuthRateLimitGuard)
+  async facebookUrl(@Query('returnPath') returnPath?: string) {
+    return this.auth.startLogin(AuthProvider.FACEBOOK, returnPath);
   }
 
   @Get('google/callback')
@@ -88,6 +102,12 @@ export class AuthController {
     return this.auth.getCurrentUser(user.id);
   }
 
+  @Patch('profile')
+  @UseGuards(OriginGuard, SessionAuthGuard)
+  updateProfile(@CurrentUser() user: User, @Body() body: { fullName?: string; phoneNumber?: string; addressLine?: string; city?: string; province?: string; postalCode?: string; country?: string }) {
+    return this.auth.updateProfile(user.id, body);
+  }
+
   @Post('logout')
   @UseGuards(OriginGuard)
   async logout(
@@ -99,6 +119,100 @@ export class AuthController {
     );
     this.clearCookie(response);
     return { success: true };
+  }
+
+  @Post('register')
+  @UseGuards(OriginGuard)
+  async register(
+    @Body() body: { name?: string; email?: string; password?: string },
+  ) {
+    return this.auth.register(body.name, body.email, body.password);
+  }
+
+  @Post('verify-email')
+  @UseGuards(OriginGuard)
+  async verifyEmail(
+    @Body() body: { email?: string; code?: string },
+    @Headers('user-agent') userAgent: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.auth.verifyEmail(
+      body.email,
+      body.code,
+      userAgent,
+    );
+    response.cookie(this.auth.cookieName, result.token, {
+      httpOnly: true,
+      secure: this.auth.cookieSecure,
+      sameSite: this.auth.cookieSameSite,
+      path: '/',
+      maxAge: this.auth.cookieMaxAgeMs,
+    });
+    return { user: await this.auth.getCurrentUser(result.userId) };
+  }
+
+  @Post('resend-verification')
+  @UseGuards(OriginGuard)
+  async resendVerification(@Body() body: { email?: string }) {
+    return this.auth.resendVerification(body.email);
+  }
+
+  @Post('login')
+  @UseGuards(OriginGuard)
+  async emailLogin(
+    @Body() body: { email?: string; password?: string },
+    @Headers('user-agent') userAgent: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.auth.emailLogin(
+      body.email,
+      body.password,
+      userAgent,
+    );
+    response.cookie(this.auth.cookieName, result.token, {
+      httpOnly: true,
+      secure: this.auth.cookieSecure,
+      sameSite: this.auth.cookieSameSite,
+      path: '/',
+      maxAge: this.auth.cookieMaxAgeMs,
+    });
+    return this.auth.getCurrentUser(result.userId);
+  }
+
+  @Post('password-reset/request')
+  @UseGuards(OriginGuard)
+  requestPasswordReset(@Body() body: { email?: string }) {
+    return this.auth.requestPasswordReset(body.email);
+  }
+
+  @Post('password-reset/verify')
+  @UseGuards(OriginGuard)
+  verifyPasswordReset(@Body() body: { email?: string; code?: string }) {
+    return this.auth.verifyPasswordResetOtp(body.email, body.code);
+  }
+
+  @Post('password-reset/complete')
+  @UseGuards(OriginGuard)
+  resetPassword(@Body() body: { resetToken?: string; password?: string }) {
+    return this.auth.resetPassword(body.resetToken, body.password);
+  }
+
+  @Post('password-change/request')
+  @UseGuards(OriginGuard, SessionAuthGuard)
+  requestPasswordChange(@CurrentUser() user: User) {
+    return this.auth.requestPasswordChange(user.id);
+  }
+
+  @Post('password-change/verify')
+  @UseGuards(OriginGuard, SessionAuthGuard)
+  verifyPasswordChange(@CurrentUser() user: User, @Body() body: { code?: string }) {
+    return this.auth.verifyPasswordChangeOtp(user.id, body.code);
+  }
+
+  @Post('password-change/complete')
+  @UseGuards(OriginGuard, SessionAuthGuard)
+  changePassword(@CurrentUser() user: User, @Body() body: { resetToken?: string; password?: string }) {
+    return this.auth.changePassword(user.id, body.resetToken, body.password);
   }
 
   @Post('logout-all')
@@ -121,10 +235,7 @@ export class AuthController {
     response: Response,
   ): Promise<void> {
     if (providerError) {
-      response.redirect(
-        302,
-        `${this.auth.frontendUrl}/auth/login?authError=cancelled`,
-      );
+      response.redirect(302, `${this.auth.frontendUrl}/?authError=cancelled`);
       return;
     }
     try {
@@ -146,10 +257,7 @@ export class AuthController {
       this.logger.warn(
         `${provider} OAuth callback failed (${error instanceof Error ? error.name : 'unknown error'}).`,
       );
-      response.redirect(
-        302,
-        `${this.auth.frontendUrl}/auth/login?authError=failed`,
-      );
+      response.redirect(302, `${this.auth.frontendUrl}/?authError=failed`);
     }
   }
 
