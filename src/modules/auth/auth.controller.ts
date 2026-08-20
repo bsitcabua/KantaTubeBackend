@@ -1,6 +1,7 @@
 import {
   Controller,
   Body,
+  Delete,
   Get,
   Headers,
   Logger,
@@ -213,6 +214,30 @@ export class AuthController {
   @UseGuards(OriginGuard, SessionAuthGuard)
   changePassword(@CurrentUser() user: User, @Body() body: { resetToken?: string; password?: string }) {
     return this.auth.changePassword(user.id, body.resetToken, body.password);
+  }
+
+  @Post('account-deletion/request')
+  @UseGuards(OriginGuard, SessionAuthGuard)
+  requestAccountDeletion(@CurrentUser() user: User) {
+    return this.auth.requestAccountDeletion(user.id);
+  }
+
+  @Post('account-deletion/verify')
+  @UseGuards(OriginGuard, SessionAuthGuard)
+  verifyAccountDeletion(@CurrentUser() user: User, @Body() body: { code?: string }) {
+    return this.auth.verifyAccountDeletionOtp(user.id, body.code);
+  }
+
+  @Delete('account')
+  @UseGuards(OriginGuard, SessionAuthGuard)
+  async deleteAccount(
+    @CurrentUser() user: User,
+    @Body() body: { deletionToken?: string },
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.auth.deleteAccount(user.id, body.deletionToken);
+    this.clearCookie(response);
+    return result;
   }
 
   @Post('logout-all')

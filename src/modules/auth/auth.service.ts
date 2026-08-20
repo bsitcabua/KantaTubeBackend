@@ -60,7 +60,10 @@ export class AuthService {
     this.validatePassword(password);
     const existing = await this.users.findOne({
       where: { email: normalizedEmail },
+      withDeleted: true,
     });
+    if (existing?.status === UserStatus.DELETED || existing?.deletedAt)
+      throw new ConflictException('This account has been deleted.');
     if (existing?.emailVerified)
       throw new ConflictException('An account with this email already exists.');
 
@@ -88,7 +91,10 @@ export class AuthService {
     const normalizedEmail = this.normalizeEmail(email);
     const user = await this.users.findOne({
       where: { email: normalizedEmail },
+      withDeleted: true,
     });
+    if (user?.status === UserStatus.DELETED || user?.deletedAt)
+      throw new UnauthorizedException('This account has been deleted.');
     if (user && !user.emailVerified)
       await this.issueVerificationCode(normalizedEmail);
     return { sent: true };
@@ -200,6 +206,48 @@ export class AuthService {
     return this.completePasswordChange(resetToken, password, PasswordOtpPurpose.CHANGE, userId);
   }
 
+  async requestAccountDeletion(userId: string): Promise<{ sent: true }> {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user?.email || !user.emailVerified || user.status !== UserStatus.ACTIVE)
+      throw new ConflictException('Account deletion is not available for this account.');
+    await this.issuePasswordOtp(user, PasswordOtpPurpose.ACCOUNT_DELETION);
+    return { sent: true };
+  }
+
+  async verifyAccountDeletionOtp(userId: string, code?: string): Promise<{ deletionToken: string }> {
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user?.email || user.status !== UserStatus.ACTIVE)
+      throw new UnauthorizedException('Account deletion is not available for this account.');
+    const result = await this.verifyPasswordOtp(user.email, code, PasswordOtpPurpose.ACCOUNT_DELETION, userId);
+    return { deletionToken: result.resetToken };
+  }
+
+  async deleteAccount(userId: string, deletionToken?: string): Promise<{ success: true }> {
+    if (!deletionToken) throw new UnauthorizedException('Account deletion verification is required.');
+    const record = await this.passwordOtps.findOne({
+      where: {
+        userId,
+        purpose: PasswordOtpPurpose.ACCOUNT_DELETION,
+        verificationTokenHash: this.hash(deletionToken),
+      },
+    });
+    if (!record?.usedAt || !record.verificationTokenExpiresAt || record.verificationTokenExpiresAt <= new Date())
+      throw new UnauthorizedException('Account deletion verification has expired.');
+
+    const user = await this.users.findOne({ where: { id: userId } });
+    if (!user || user.status !== UserStatus.ACTIVE)
+      throw new UnauthorizedException('This account is no longer active.');
+
+    const deletedAt = new Date();
+    await this.users.manager.transaction(async (manager) => {
+      await this.revokeUserSessions(manager.getRepository(AuthSession), userId, deletedAt);
+      await manager.getRepository(PasswordOtp).delete({ userId });
+      await manager.getRepository(User).update(userId, { status: UserStatus.DELETED });
+      await manager.getRepository(User).softDelete(userId);
+    });
+    return { success: true };
+  }
+
   private async issuePasswordOtp(user: User, purpose: PasswordOtpPurpose): Promise<void> {
     const recent = await this.passwordOtps.findOne({
       where: { userId: user.id, purpose },
@@ -220,7 +268,12 @@ export class AuthService {
       verificationTokenHash: null,
       verificationTokenExpiresAt: null,
     }));
-    await this.emailService.sendVerificationCode(user.email!, code, purpose === PasswordOtpPurpose.RESET ? 'Reset your KantaTube password' : 'Verify your KantaTube password change');
+    const subject = purpose === PasswordOtpPurpose.RESET
+      ? 'Reset your KantaTube password'
+      : purpose === PasswordOtpPurpose.CHANGE
+        ? 'Verify your KantaTube password change'
+        : 'Verify your KantaTube account deletion';
+    await this.emailService.sendVerificationCode(user.email!, code, subject);
   }
 
   private async verifyPasswordOtp(email: string, code: string | undefined, purpose: PasswordOtpPurpose, userId?: string): Promise<{ resetToken: string }> {
@@ -382,7 +435,7 @@ export class AuthService {
       },
       relations: { user: true },
     });
-    if (!session || session.user.status !== UserStatus.ACTIVE) return null;
+    if (!session?.user || session.user.status !== UserStatus.ACTIVE || session.user.deletedAt) return null;
 
     if (Date.now() - session.lastUsedAt.getTime() > 5 * 60 * 1000) {
       session.lastUsedAt = new Date();
@@ -442,9 +495,17 @@ export class AuthService {
   }
 
   async revokeAllSessions(userId: string): Promise<void> {
-    await this.sessions.update(
+    await this.revokeUserSessions(this.sessions, userId, new Date());
+  }
+
+  private async revokeUserSessions(
+    repository: Pick<Repository<AuthSession>, 'update'>,
+    userId: string,
+    revokedAt: Date,
+  ): Promise<void> {
+    await repository.update(
       { userId, revokedAt: IsNull() },
-      { revokedAt: new Date() },
+      { revokedAt },
     );
   }
 
@@ -493,6 +554,11 @@ export class AuthService {
       relations: { user: true },
     });
     if (account) {
+      const accountUser = account.user || await this.users.findOne({ where: { id: account.userId }, withDeleted: true });
+      if (!accountUser || accountUser.status === UserStatus.DELETED || accountUser.deletedAt) {
+        throw new UnauthorizedException('This account has been deleted.');
+      }
+      account.user = accountUser;
       if (account.user.status !== UserStatus.ACTIVE) {
         throw new UnauthorizedException('This account is disabled.');
       }
@@ -518,8 +584,12 @@ export class AuthService {
       const matchingUser = await this.users.findOne({
         where: { email: profile.email.toLowerCase() },
         relations: { authAccounts: true },
+        withDeleted: true,
       });
       if (matchingUser) {
+        if (matchingUser.status === UserStatus.DELETED || matchingUser.deletedAt) {
+          throw new UnauthorizedException('This account has been deleted.');
+        }
         if (matchingUser.status !== UserStatus.ACTIVE) {
           throw new UnauthorizedException('This account is disabled.');
         }
@@ -577,7 +647,12 @@ export class AuthService {
         },
         relations: { user: true },
       });
-      if (existing) return existing.user;
+      if (existing) {
+        const existingUser = existing.user || await this.users.findOne({ where: { id: existing.userId }, withDeleted: true });
+        if (!existingUser || existingUser.status === UserStatus.DELETED || existingUser.deletedAt)
+          throw new UnauthorizedException('This account has been deleted.');
+        return existingUser;
+      }
       throw new ConflictException('This provider account is already in use.');
     }
   }

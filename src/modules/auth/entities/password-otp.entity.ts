@@ -3,6 +3,7 @@ import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 
 export enum PasswordOtpPurpose {
   RESET = 'password_reset',
   CHANGE = 'password_change',
+  ACCOUNT_DELETION = 'account_deletion',
 }
 
 @Entity('password_otp_codes')

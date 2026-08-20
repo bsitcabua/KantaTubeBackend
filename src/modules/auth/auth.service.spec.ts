@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthProvider } from './entities/auth-account.entity';
 import { UserStatus } from '../users/entities/user.entity';
+import { PasswordOtpPurpose } from './entities/password-otp.entity';
 
 describe('AuthService', () => {
   const profile = {
@@ -20,7 +21,10 @@ describe('AuthService', () => {
       create: jest.fn((value) => value),
       save: jest.fn(async (value) => ({ id: value.id || 'user-1', ...value })),
       delete: jest.fn(),
+      update: jest.fn(),
+      softDelete: jest.fn(),
       findOne: jest.fn(),
+      manager: undefined as any,
     };
     const accounts = {
       create: jest.fn((value) => value),
@@ -46,6 +50,15 @@ describe('AuthService', () => {
       findOne: jest.fn(),
       delete: jest.fn(),
     };
+    const manager = {
+      getRepository: jest.fn((entity: { name: string }) => {
+        if (entity.name === 'AuthSession') return sessions;
+        if (entity.name === 'PasswordOtp') return passwordOtps;
+        return users;
+      }),
+      transaction: jest.fn(async (work: (transactionManager: any) => Promise<void>) => work(manager)),
+    };
+    users.manager = manager;
     const google = {
       getAuthorizationUrl: jest.fn(() => 'https://accounts.google.test/auth'),
       exchangeCode: jest.fn(async () => profile),
@@ -162,5 +175,42 @@ describe('AuthService', () => {
     await expect(context.service.resetPassword('valid-token', currentPassword))
       .rejects.toThrow('Your new password cannot be the same as your current password.');
     expect(context.users.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps account-deletion OTPs isolated from other OTP purposes', async () => {
+    const context = setup();
+    context.users.findOne.mockResolvedValue({
+      id: 'user-1',
+      email: 'singer@example.com',
+      status: UserStatus.ACTIVE,
+    });
+    context.passwordOtps.findOne.mockResolvedValue(null);
+
+    await expect(context.service.verifyAccountDeletionOtp('user-1', '123456'))
+      .rejects.toThrow('verification code');
+    expect(context.passwordOtps.findOne).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ purpose: PasswordOtpPurpose.ACCOUNT_DELETION }),
+    }));
+  });
+
+  it('soft deletes an OTP-authorized account and revokes every session', async () => {
+    const context = setup();
+    context.passwordOtps.findOne.mockResolvedValue({
+      id: 'otp-1',
+      userId: 'user-1',
+      usedAt: new Date(),
+      verificationTokenExpiresAt: new Date(Date.now() + 60_000),
+    });
+    context.users.findOne.mockResolvedValue({ id: 'user-1', status: UserStatus.ACTIVE });
+
+    await expect(context.service.deleteAccount('user-1', 'deletion-token'))
+      .resolves.toEqual({ success: true });
+    expect(context.sessions.update).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1' }),
+      expect.objectContaining({ revokedAt: expect.any(Date) }),
+    );
+    expect(context.users.update).toHaveBeenCalledWith('user-1', { status: UserStatus.DELETED });
+    expect(context.users.softDelete).toHaveBeenCalledWith('user-1');
+    expect(context.passwordOtps.delete).toHaveBeenCalledWith({ userId: 'user-1' });
   });
 });

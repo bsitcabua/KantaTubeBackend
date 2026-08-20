@@ -1,6 +1,7 @@
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   Index,
   OneToMany,
@@ -13,6 +14,7 @@ import { AuthSession } from '../../auth/entities/auth-session.entity';
 export enum UserStatus {
   ACTIVE = 'active',
   DISABLED = 'disabled',
+  DELETED = 'deleted',
 }
 
 @Entity('users')
@@ -59,6 +61,9 @@ export class User {
 
   @Column({ type: 'datetime', nullable: true })
   lastLoginAt: Date | null;
+
+  @DeleteDateColumn({ type: 'datetime', nullable: true })
+  deletedAt: Date | null;
 
   @CreateDateColumn({ type: 'datetime' })
   createdAt: Date;
