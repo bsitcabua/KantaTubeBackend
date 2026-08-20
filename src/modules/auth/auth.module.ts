@@ -9,6 +9,7 @@ import { OAuthLoginAttempt } from './entities/oauth-login-attempt.entity';
 import { EmailVerificationCode } from './entities/email-verification-code.entity';
 import { EmailService } from './email.service';
 import { PasswordOtp } from './entities/password-otp.entity';
+import { AccountRecoveryReference } from './entities/account-recovery-reference.entity';
 import { OAuthRateLimitGuard } from './guards/oauth-rate-limit.guard';
 import { OriginGuard } from './guards/origin.guard';
 import { SessionAuthGuard } from './guards/session-auth.guard';
@@ -24,6 +25,7 @@ import { GoogleAuthProvider } from './providers/google-auth.provider';
       OAuthLoginAttempt,
       EmailVerificationCode,
       PasswordOtp,
+      AccountRecoveryReference,
     ]),
   ],
   controllers: [AuthController],

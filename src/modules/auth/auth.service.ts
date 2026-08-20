@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -20,6 +21,7 @@ import { GoogleAuthProvider } from './providers/google-auth.provider';
 import { EmailVerificationCode } from './entities/email-verification-code.entity';
 import { EmailService } from './email.service';
 import { PasswordOtp, PasswordOtpPurpose } from './entities/password-otp.entity';
+import { AccountRecoveryReference } from './entities/account-recovery-reference.entity';
 
 export interface StartedOAuthLogin {
   authorizationUrl: string;
@@ -29,6 +31,9 @@ const scrypt = promisify(scryptCallback);
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+  private readonly recoveryRequestsByIp = new Map<string, number[]>();
+
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(AuthAccount)
@@ -47,6 +52,9 @@ export class AuthService {
     private readonly verificationCodes: Repository<EmailVerificationCode> = undefined as unknown as Repository<EmailVerificationCode>,
     @Optional()
     private readonly emailService: EmailService = undefined as unknown as EmailService,
+    @Optional()
+    @InjectRepository(AccountRecoveryReference)
+    private readonly recoveryReferences: Repository<AccountRecoveryReference> = undefined as unknown as Repository<AccountRecoveryReference>,
   ) {}
 
   async register(
@@ -62,10 +70,12 @@ export class AuthService {
       where: { email: normalizedEmail },
       withDeleted: true,
     });
-    if (existing?.status === UserStatus.DELETED || existing?.deletedAt)
-      throw new ConflictException('This account has been deleted.');
-    if (existing?.emailVerified)
-      throw new ConflictException('An account with this email already exists.');
+    if (
+      existing?.status === UserStatus.DELETED ||
+      existing?.deletedAt ||
+      existing?.emailVerified
+    )
+      throw this.emailAlreadyRegisteredConflict();
 
     const passwordHash = await this.hashPassword(password!);
     const user =
@@ -82,7 +92,13 @@ export class AuthService {
     user.displayName = name.trim();
     user.passwordHash = passwordHash;
     user.emailVerified = false;
-    await this.users.save(user);
+    try {
+      await this.users.save(user);
+    } catch (error) {
+      if (this.isDuplicateEntryError(error))
+        throw this.emailAlreadyRegisteredConflict();
+      throw error;
+    }
     await this.issueVerificationCode(normalizedEmail);
     return { email: normalizedEmail, verificationRequired: true };
   }
@@ -150,12 +166,15 @@ export class AuthService {
     const normalizedEmail = this.normalizeEmail(email);
     const user = await this.users.findOne({
       where: { email: normalizedEmail },
+      withDeleted: true,
     });
     if (
       !user?.passwordHash ||
       !(await this.verifyPassword(password || '', user.passwordHash))
     )
       throw new UnauthorizedException('Invalid email or password.');
+    if (user.status === UserStatus.DELETED || user.deletedAt)
+      await this.throwDeletedAccountState(user);
     if (!user.emailVerified)
       throw new UnauthorizedException(
         'Please verify your email before signing in.',
@@ -239,13 +258,210 @@ export class AuthService {
       throw new UnauthorizedException('This account is no longer active.');
 
     const deletedAt = new Date();
+    const scheduledDeletionAt = new Date(
+      deletedAt.getTime() + this.recoveryPeriodDays * 24 * 60 * 60 * 1000,
+    );
     await this.users.manager.transaction(async (manager) => {
       await this.revokeUserSessions(manager.getRepository(AuthSession), userId, deletedAt);
       await manager.getRepository(PasswordOtp).delete({ userId });
-      await manager.getRepository(User).update(userId, { status: UserStatus.DELETED });
+      await manager.getRepository(User).update(userId, {
+        status: UserStatus.DELETED,
+        scheduledDeletionAt,
+      });
       await manager.getRepository(User).softDelete(userId);
+      await manager.getRepository(User).update(userId, { deletedAt });
     });
+    if (user.email) {
+      try {
+        await this.emailService.sendAccountDeletionConfirmation(
+          user.email,
+          deletedAt,
+          scheduledDeletionAt,
+        );
+      } catch (error) {
+        this.logger.error(
+          'Account deletion confirmation email could not be sent.',
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
+    }
     return { success: true };
+  }
+
+  async requestAccountRecovery(
+    input: { email?: string; recoveryReference?: string },
+    ipAddress?: string,
+  ): Promise<{ sent: true }> {
+    const email = input.email ? this.normalizeEmail(input.email) : undefined;
+    if (!email && !input.recoveryReference?.trim()) {
+      throw new ConflictException('A valid email or recovery reference is required.');
+    }
+    if (!this.allowRecoveryRequestFromIp(ipAddress)) {
+      this.auditRecovery('recovery_limited', undefined, 'ip_hourly_limit');
+      return { sent: true };
+    }
+
+    const user = email
+      ? await this.users.findOne({ where: { email }, withDeleted: true })
+      : await this.userForRecoveryReference(input.recoveryReference!);
+    if (!user || !this.isAccountRecoverable(user)) return { sent: true };
+
+    try {
+      await this.issueAccountRecoveryOtp(user);
+      this.auditRecovery('recovery_requested', user.id);
+    } catch (error) {
+      this.auditRecovery(
+        'recovery_not_sent',
+        user.id,
+        error instanceof Error ? error.name : 'unknown_error',
+      );
+    }
+    return { sent: true };
+  }
+
+  async verifyAccountRecoveryOtp(
+    email: string | undefined,
+    recoveryReference: string | undefined,
+    code?: string,
+  ): Promise<{ recoveryToken: string }> {
+    const normalizedEmail = email ? this.normalizeEmail(email) : undefined;
+    const user = normalizedEmail
+      ? await this.users.findOne({ where: { email: normalizedEmail }, withDeleted: true })
+      : recoveryReference
+        ? await this.userForRecoveryReference(recoveryReference)
+        : null;
+    if (!user || !this.isAccountRecoverable(user) || !/^\d{6}$/.test(code || '')) {
+      this.auditRecovery('recovery_verification_failed', user?.id, 'invalid_or_expired');
+      throw new UnauthorizedException('The recovery code is invalid or expired.');
+    }
+    const recoveryToken = await this.users.manager.transaction(async (manager) => {
+      const userRepository = manager.getRepository(User);
+      const lockedUser = await userRepository.findOne({
+        where: { id: user.id },
+        withDeleted: true,
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedUser || !this.isAccountRecoverable(lockedUser)) {
+        this.auditRecovery('recovery_verification_failed', lockedUser?.id, 'window_expired');
+        throw new UnauthorizedException('The recovery code is invalid or expired.');
+      }
+
+      const otpRepository = manager.getRepository(PasswordOtp);
+      const record = await otpRepository.findOne({
+        where: {
+          userId: lockedUser.id,
+          purpose: PasswordOtpPurpose.ACCOUNT_RECOVERY,
+          usedAt: IsNull(),
+        },
+        order: { createdAt: 'DESC' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!record || record.expiresAt <= new Date()) {
+        this.auditRecovery('recovery_verification_failed', lockedUser.id, 'otp_expired');
+        throw new UnauthorizedException('The recovery code is invalid or expired.');
+      }
+      if (record.attempts >= this.recoveryOtpMaxAttempts) {
+        this.auditRecovery('recovery_limited', lockedUser.id, 'otp_attempt_limit');
+        throw new UnauthorizedException('Too many verification attempts. Please request a new code.');
+      }
+
+      record.attempts += 1;
+      const valid = timingSafeEqual(
+        Buffer.from(record.codeHash),
+        Buffer.from(this.hash(code!)),
+      );
+      if (!valid) {
+        await otpRepository.save(record);
+        return null;
+      }
+      const token = this.randomToken(32);
+      record.usedAt = new Date();
+      record.verificationTokenHash = this.hash(token);
+      record.verificationTokenExpiresAt = new Date(
+        Date.now() + this.recoveryTokenLifetimeMinutes * 60_000,
+      );
+      await otpRepository.save(record);
+      return token;
+    });
+    if (!recoveryToken)
+      this.auditRecovery('recovery_verification_failed', user.id, 'incorrect_code');
+    if (!recoveryToken)
+      throw new UnauthorizedException('The recovery code is invalid or expired.');
+    return { recoveryToken };
+  }
+
+  async completeAccountRecovery(
+    recoveryToken?: string,
+    userAgent?: string,
+  ): Promise<{ token: string; userId: string }> {
+    if (!recoveryToken)
+      throw new UnauthorizedException('Account recovery verification is required.');
+    const tokenHash = this.hash(recoveryToken);
+    return this.users.manager.transaction(async (manager) => {
+      const otpRepository = manager.getRepository(PasswordOtp);
+      const record = await otpRepository.findOne({
+        where: {
+          purpose: PasswordOtpPurpose.ACCOUNT_RECOVERY,
+          verificationTokenHash: tokenHash,
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (
+        !record?.usedAt ||
+        !record.userId ||
+        !record.verificationTokenExpiresAt ||
+        record.verificationTokenExpiresAt <= new Date()
+      ) {
+        this.auditRecovery('recovery_completion_failed', record?.userId || undefined, 'token_expired');
+        throw new UnauthorizedException('Account recovery verification has expired.');
+      }
+
+      const userRepository = manager.getRepository(User);
+      const user = await userRepository.findOne({
+        where: { id: record.userId },
+        withDeleted: true,
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!user || !this.isAccountRecoverable(user)) {
+        this.auditRecovery('recovery_completion_failed', user?.id, 'account_not_recoverable');
+        throw new UnauthorizedException('This account can no longer be recovered.');
+      }
+
+      await userRepository.restore(user.id);
+      await userRepository.update(user.id, {
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+        scheduledDeletionAt: null,
+        lastLoginAt: new Date(),
+      });
+      await otpRepository.delete({
+        userId: user.id,
+        purpose: PasswordOtpPurpose.ACCOUNT_RECOVERY,
+      });
+      if (this.recoveryReferences) {
+        await manager.getRepository(AccountRecoveryReference).delete({
+          userId: user.id,
+        });
+      }
+      const token = await this.createSessionWithRepository(
+        manager.getRepository(AuthSession),
+        user.id,
+        userAgent,
+      );
+      this.auditRecovery('recovery_completed', user.id);
+      return { token, userId: user.id };
+    });
+  }
+
+  isAccountRecoverable(user: User): boolean {
+    return (
+      user.status === UserStatus.DELETED &&
+      !!user.deletedAt &&
+      !!user.scheduledDeletionAt &&
+      user.scheduledDeletionAt > new Date() &&
+      !!user.email &&
+      user.emailVerified
+    );
   }
 
   private async issuePasswordOtp(user: User, purpose: PasswordOtpPurpose): Promise<void> {
@@ -274,6 +490,58 @@ export class AuthService {
         ? 'Verify your KantaTube password change'
         : 'Verify your KantaTube account deletion';
     await this.emailService.sendVerificationCode(user.email!, code, subject);
+  }
+
+  private async issueAccountRecoveryOtp(user: User): Promise<void> {
+    const purpose = PasswordOtpPurpose.ACCOUNT_RECOVERY;
+    const now = new Date();
+    const code = randomInt(100000, 1000000).toString();
+    const record = await this.users.manager.transaction(async (manager) => {
+      const lockedUser = await manager.getRepository(User).findOne({
+        where: { id: user.id },
+        withDeleted: true,
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedUser || !this.isAccountRecoverable(lockedUser))
+        throw new UnauthorizedException('This account can no longer be recovered.');
+      const otpRepository = manager.getRepository(PasswordOtp);
+      const recent = await otpRepository.findOne({
+        where: { userId: user.id, purpose },
+        order: { createdAt: 'DESC' },
+      });
+      if (
+        recent &&
+        now.getTime() - recent.createdAt.getTime() < this.recoveryResendCooldownSeconds * 1000
+      ) {
+        throw new ConflictException('Please wait before requesting another code.');
+      }
+      const sentToday = await otpRepository.count({
+        where: {
+          userId: user.id,
+          purpose,
+          createdAt: MoreThan(new Date(now.getTime() - 24 * 60 * 60 * 1000)),
+        },
+      });
+      if (sentToday >= this.recoveryEmailsPerDay)
+        throw new ConflictException('Recovery email limit reached.');
+      return otpRepository.save(otpRepository.create({
+        userId: user.id,
+        email: user.email!,
+        purpose,
+        codeHash: this.hash(code),
+        expiresAt: new Date(now.getTime() + this.recoveryOtpLifetimeMinutes * 60_000),
+        usedAt: null,
+        attempts: 0,
+        verificationTokenHash: null,
+        verificationTokenExpiresAt: null,
+      }));
+    });
+    try {
+      await this.emailService.sendAccountRecoveryCode(user.email!, code);
+    } catch (error) {
+      await this.passwordOtps.delete(record.id);
+      throw error;
+    }
   }
 
   private async verifyPasswordOtp(email: string, code: string | undefined, purpose: PasswordOtpPurpose, userId?: string): Promise<{ resetToken: string }> {
@@ -334,6 +602,18 @@ export class AuthService {
     )
       throw new ConflictException('A valid email is required.');
     return normalized;
+  }
+
+  private emailAlreadyRegisteredConflict(): ConflictException {
+    return new ConflictException({
+      code: 'email_already_registered',
+      message: 'An account with this email already exists.',
+    });
+  }
+
+  private isDuplicateEntryError(error: unknown): boolean {
+    const details = error as { code?: string; errno?: number } | undefined;
+    return details?.code === 'ER_DUP_ENTRY' || details?.errno === 1062;
   }
 
   private validatePassword(password?: string): void {
@@ -555,9 +835,10 @@ export class AuthService {
     });
     if (account) {
       const accountUser = account.user || await this.users.findOne({ where: { id: account.userId }, withDeleted: true });
-      if (!accountUser || accountUser.status === UserStatus.DELETED || accountUser.deletedAt) {
+      if (!accountUser)
         throw new UnauthorizedException('This account has been deleted.');
-      }
+      if (accountUser.status === UserStatus.DELETED || accountUser.deletedAt)
+        await this.throwDeletedAccountState(accountUser, true);
       account.user = accountUser;
       if (account.user.status !== UserStatus.ACTIVE) {
         throw new UnauthorizedException('This account is disabled.');
@@ -588,7 +869,7 @@ export class AuthService {
       });
       if (matchingUser) {
         if (matchingUser.status === UserStatus.DELETED || matchingUser.deletedAt) {
-          throw new UnauthorizedException('This account has been deleted.');
+          await this.throwDeletedAccountState(matchingUser, true);
         }
         if (matchingUser.status !== UserStatus.ACTIVE) {
           throw new UnauthorizedException('This account is disabled.');
@@ -649,8 +930,10 @@ export class AuthService {
       });
       if (existing) {
         const existingUser = existing.user || await this.users.findOne({ where: { id: existing.userId }, withDeleted: true });
-        if (!existingUser || existingUser.status === UserStatus.DELETED || existingUser.deletedAt)
+        if (!existingUser)
           throw new UnauthorizedException('This account has been deleted.');
+        if (existingUser.status === UserStatus.DELETED || existingUser.deletedAt)
+          await this.throwDeletedAccountState(existingUser, true);
         return existingUser;
       }
       throw new ConflictException('This provider account is already in use.');
@@ -661,11 +944,19 @@ export class AuthService {
     userId: string,
     userAgent?: string,
   ): Promise<string> {
-    await this.sessions.delete({ expiresAt: LessThan(new Date()) });
+    return this.createSessionWithRepository(this.sessions, userId, userAgent);
+  }
+
+  private async createSessionWithRepository(
+    repository: Repository<AuthSession>,
+    userId: string,
+    userAgent?: string,
+  ): Promise<string> {
+    await repository.delete({ expiresAt: LessThan(new Date()) });
     const token = this.randomToken(48);
     const now = new Date();
-    await this.sessions.save(
-      this.sessions.create({
+    await repository.save(
+      repository.create({
         tokenHash: this.hash(token),
         userId,
         expiresAt: new Date(now.getTime() + this.cookieMaxAgeMs),
@@ -675,6 +966,111 @@ export class AuthService {
       }),
     );
     return token;
+  }
+
+  private async throwDeletedAccountState(
+    user: User,
+    includeRecoveryReference = false,
+  ): Promise<never> {
+    if (!this.isAccountRecoverable(user)) {
+      throw new UnauthorizedException({
+        code: 'account_deleted_expired',
+        message: 'This account was deleted and can no longer be recovered.',
+      });
+    }
+    const recoveryReference = includeRecoveryReference
+      ? await this.createRecoveryReference(user.id)
+      : undefined;
+    throw new UnauthorizedException({
+      code: 'account_recoverable',
+      message: 'This account was deleted but can still be recovered.',
+      recoverableUntil: user.scheduledDeletionAt!.toISOString(),
+      ...(recoveryReference ? { recoveryReference } : {}),
+    });
+  }
+
+  private async createRecoveryReference(userId: string): Promise<string | undefined> {
+    if (!this.recoveryReferences) return undefined;
+    await this.recoveryReferences.delete({ expiresAt: LessThan(new Date()) });
+    const reference = this.randomToken(32);
+    await this.recoveryReferences.save(
+      this.recoveryReferences.create({
+        referenceHash: this.hash(reference),
+        userId,
+        expiresAt: new Date(Date.now() + 15 * 60_000),
+        usedAt: null,
+      }),
+    );
+    return reference;
+  }
+
+  private async userForRecoveryReference(reference: string): Promise<User | null> {
+    if (!this.recoveryReferences || !reference?.trim()) return null;
+    const record = await this.recoveryReferences.findOne({
+      where: {
+        referenceHash: this.hash(reference),
+        usedAt: IsNull(),
+        expiresAt: MoreThan(new Date()),
+      },
+    });
+    if (!record) return null;
+    return this.users.findOne({ where: { id: record.userId }, withDeleted: true });
+  }
+
+  private allowRecoveryRequestFromIp(ipAddress?: string): boolean {
+    const key = ipAddress?.trim() || 'unknown';
+    const now = Date.now();
+    const windowStart = now - 60 * 60 * 1000;
+    const recent = (this.recoveryRequestsByIp.get(key) || []).filter(
+      (timestamp) => timestamp > windowStart,
+    );
+    if (recent.length >= this.recoveryRequestsPerIpHour) {
+      this.recoveryRequestsByIp.set(key, recent);
+      return false;
+    }
+    recent.push(now);
+    this.recoveryRequestsByIp.set(key, recent);
+    return true;
+  }
+
+  private configuredPositiveInteger(name: string, fallback: number): number {
+    const value = Number(this.config.get<string>(name));
+    return Number.isInteger(value) && value > 0 ? value : fallback;
+  }
+
+  private auditRecovery(event: string, userId?: string, reason?: string): void {
+    const entry = JSON.stringify({ event, ...(userId ? { userId } : {}), ...(reason ? { reason } : {}) });
+    if (event === 'recovery_requested' || event === 'recovery_completed')
+      this.logger.log(entry);
+    else this.logger.warn(entry);
+  }
+
+  private get recoveryPeriodDays(): number {
+    return this.configuredPositiveInteger('ACCOUNT_RECOVERY_PERIOD_DAYS', 30);
+  }
+
+  private get recoveryOtpLifetimeMinutes(): number {
+    return this.configuredPositiveInteger('ACCOUNT_RECOVERY_OTP_TTL_MINUTES', 10);
+  }
+
+  private get recoveryResendCooldownSeconds(): number {
+    return this.configuredPositiveInteger('ACCOUNT_RECOVERY_RESEND_COOLDOWN_SECONDS', 60);
+  }
+
+  private get recoveryOtpMaxAttempts(): number {
+    return this.configuredPositiveInteger('ACCOUNT_RECOVERY_OTP_MAX_ATTEMPTS', 5);
+  }
+
+  private get recoveryTokenLifetimeMinutes(): number {
+    return this.configuredPositiveInteger('ACCOUNT_RECOVERY_TOKEN_TTL_MINUTES', 10);
+  }
+
+  private get recoveryEmailsPerDay(): number {
+    return this.configuredPositiveInteger('ACCOUNT_RECOVERY_EMAILS_PER_DAY', 5);
+  }
+
+  private get recoveryRequestsPerIpHour(): number {
+    return this.configuredPositiveInteger('ACCOUNT_RECOVERY_REQUESTS_PER_IP_HOUR', 10);
   }
 
   private safeReturnPath(value?: string): string {

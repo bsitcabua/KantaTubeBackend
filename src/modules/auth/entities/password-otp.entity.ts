@@ -4,6 +4,7 @@ export enum PasswordOtpPurpose {
   RESET = 'password_reset',
   CHANGE = 'password_change',
   ACCOUNT_DELETION = 'account_deletion',
+  ACCOUNT_RECOVERY = 'account_recovery',
 }
 
 @Entity('password_otp_codes')

@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Headers,
+  HttpException,
   Logger,
   Post,
   Patch,
@@ -228,6 +229,49 @@ export class AuthController {
     return this.auth.verifyAccountDeletionOtp(user.id, body.code);
   }
 
+  @Post('account-recovery/request')
+  @UseGuards(OriginGuard)
+  requestAccountRecovery(
+    @Body() body: { email?: string; recoveryReference?: string },
+    @Req() request: Request,
+  ) {
+    return this.auth.requestAccountRecovery(body, request.ip);
+  }
+
+  @Post('account-recovery/verify')
+  @UseGuards(OriginGuard)
+  verifyAccountRecovery(
+    @Body()
+    body: { email?: string; recoveryReference?: string; code?: string },
+  ) {
+    return this.auth.verifyAccountRecoveryOtp(
+      body.email,
+      body.recoveryReference,
+      body.code,
+    );
+  }
+
+  @Post('account-recovery/complete')
+  @UseGuards(OriginGuard)
+  async completeAccountRecovery(
+    @Body() body: { recoveryToken?: string },
+    @Headers('user-agent') userAgent: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.auth.completeAccountRecovery(
+      body.recoveryToken,
+      userAgent,
+    );
+    response.cookie(this.auth.cookieName, result.token, {
+      httpOnly: true,
+      secure: this.auth.cookieSecure,
+      sameSite: this.auth.cookieSameSite,
+      path: '/',
+      maxAge: this.auth.cookieMaxAgeMs,
+    });
+    return { user: await this.auth.getCurrentUser(result.userId) };
+  }
+
   @Delete('account')
   @UseGuards(OriginGuard, SessionAuthGuard)
   async deleteAccount(
@@ -282,7 +326,29 @@ export class AuthController {
       this.logger.warn(
         `${provider} OAuth callback failed (${error instanceof Error ? error.name : 'unknown error'}).`,
       );
-      response.redirect(302, `${this.auth.frontendUrl}/?authError=failed`);
+      const exceptionResponse =
+        error instanceof HttpException ? error.getResponse() : undefined;
+      const details =
+        typeof exceptionResponse === 'object' && exceptionResponse
+          ? (exceptionResponse as Record<string, unknown>)
+          : undefined;
+      if (
+        details?.code === 'account_recoverable' &&
+        typeof details.recoveryReference === 'string' &&
+        typeof details.recoverableUntil === 'string'
+      ) {
+        const query = new URLSearchParams({
+          authError: 'account_recoverable',
+          recoveryRef: details.recoveryReference,
+          recoverableUntil: details.recoverableUntil,
+        });
+        response.redirect(302, `${this.auth.frontendUrl}/?${query}`);
+        return;
+      }
+      const code = details?.code === 'account_deleted_expired'
+        ? 'account_deleted_expired'
+        : 'failed';
+      response.redirect(302, `${this.auth.frontendUrl}/?authError=${code}`);
     }
   }
 

@@ -65,6 +65,10 @@ export class User {
   @DeleteDateColumn({ type: 'datetime', nullable: true })
   deletedAt: Date | null;
 
+  @Index('idx_users_scheduled_deletion_at')
+  @Column({ type: 'datetime', nullable: true })
+  scheduledDeletionAt: Date | null;
+
   @CreateDateColumn({ type: 'datetime' })
   createdAt: Date;
 
