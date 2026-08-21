@@ -275,7 +275,7 @@ describe('AuthService', () => {
   it('returns a stable recoverable-account response without creating a session', async () => {
     const context = setup();
     const passwordHash = await (context.service as any).hashPassword('StrongPassword123!');
-    context.users.findOne.mockResolvedValue({
+    context.users.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce({
       id: 'user-1',
       email: 'singer@example.com',
       emailVerified: true,
@@ -295,6 +295,32 @@ describe('AuthService', () => {
       }));
     }
     expect(context.sessions.save).not.toHaveBeenCalled();
+  });
+
+  it('prefers an active email account over a deleted provider account with the same email', async () => {
+    const context = setup();
+    const password = 'StrongPassword123!';
+    const passwordHash = await (context.service as any).hashPassword(password);
+    context.users.findOne.mockResolvedValueOnce({
+      id: 'active-email-user',
+      email: 'singer@example.com',
+      emailVerified: true,
+      passwordHash,
+      status: UserStatus.ACTIVE,
+      deletedAt: null,
+      lastLoginAt: null,
+    });
+
+    await expect(context.service.emailLogin('singer@example.com', password))
+      .resolves.toEqual(expect.objectContaining({ userId: 'active-email-user' }));
+
+    expect(context.users.findOne).toHaveBeenCalledTimes(1);
+    expect(context.users.findOne).toHaveBeenCalledWith({
+      where: { email: 'singer@example.com' },
+    });
+    expect(context.sessions.save).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'active-email-user' }),
+    );
   });
 
   it('sends recovery OTPs only for a recoverable deleted user', async () => {

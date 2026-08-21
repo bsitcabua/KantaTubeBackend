@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { AuthAccount } from '../../auth/entities/auth-account.entity';
 import { AuthSession } from '../../auth/entities/auth-session.entity';
+import { KaraokeSession } from '../../karaoke/entities/karaoke-session.entity';
 
 export enum UserStatus {
   ACTIVE = 'active',
@@ -80,4 +81,7 @@ export class User {
 
   @OneToMany(() => AuthSession, (session) => session.user)
   sessions: AuthSession[];
+
+  @OneToMany(() => KaraokeSession, (session) => session.owner)
+  karaokeSessions: KaraokeSession[];
 }

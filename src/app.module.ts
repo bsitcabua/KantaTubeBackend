@@ -10,6 +10,7 @@ import { join } from 'path';
 import { YoutubeModule } from './modules/youtube/youtube.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { getDatabaseOptions } from './database/database.config';
+import { KaraokeModule } from './modules/karaoke/karaoke.module';
 
 @Module({
   providers: [SearchGateway],
@@ -27,6 +28,7 @@ import { getDatabaseOptions } from './database/database.config';
     BugReportModule,
     YoutubeModule,
     AuthModule,
+    KaraokeModule,
   ],
 })
 export class AppModule {}

@@ -164,10 +164,20 @@ export class AuthService {
     userAgent?: string,
   ): Promise<{ token: string; userId: string }> {
     const normalizedEmail = this.normalizeEmail(email);
-    const user = await this.users.findOne({
+    // Prefer the current, non-soft-deleted account. A deleted social account
+    // may legitimately share the email with a newer active email account;
+    // including deleted rows in the first lookup can select the passwordless
+    // row and incorrectly reject a valid password.
+    let user = await this.users.findOne({
       where: { email: normalizedEmail },
-      withDeleted: true,
     });
+    if (!user) {
+      user = await this.users.findOne({
+        where: { email: normalizedEmail },
+        withDeleted: true,
+        order: { deletedAt: 'DESC' },
+      });
+    }
     if (
       !user?.passwordHash ||
       !(await this.verifyPassword(password || '', user.passwordHash))
