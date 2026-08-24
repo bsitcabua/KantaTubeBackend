@@ -22,40 +22,41 @@
   <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
   [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
-## Description
+## KantaTube backend
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+NestJS API and WebSocket backend for KantaTube karaoke. Social authentication setup and production callback URLs are documented in [docs/AUTHENTICATION_SETUP.md](docs/AUTHENTICATION_SETUP.md).
 
 ## Project setup
 
 ```bash
-$ yarn install
+npm install
+npm run migration:run
 ```
 
 ## Compile and run the project
 
 ```bash
 # development
-$ yarn run start
+$ npm run start
 
 # watch mode
-$ yarn run start:dev
+$ npm run start:dev
 
 # production mode
-$ yarn run start:prod
+$ npm run start:prod
 ```
 
 ## Run tests
 
 ```bash
 # unit tests
-$ yarn run test
+$ npm run test
 
 # e2e tests
-$ yarn run test:e2e
+$ npm run test:e2e
 
 # test coverage
-$ yarn run test:cov
+$ npm run test:cov
 ```
 
 ## Deployment
