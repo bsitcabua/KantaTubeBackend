@@ -27,19 +27,32 @@ export class YoutubeSearchCacheService {
   }
 
   getOrCreate(
+    cacheScope: string,
     keyword: string,
     factory: () => Promise<YoutubeSearchResponse>,
+  ): Promise<YoutubeSearchResponse>;
+  getOrCreate(
+    keyword: string,
+    factory: () => Promise<YoutubeSearchResponse>,
+  ): Promise<YoutubeSearchResponse>;
+  getOrCreate(
+    first: string,
+    second: string | (() => Promise<YoutubeSearchResponse>),
+    third?: () => Promise<YoutubeSearchResponse>,
   ): Promise<YoutubeSearchResponse> {
-    const cacheKey = this.normalizeKeyword(keyword);
+    const cacheScope = third ? first : 'server:default';
+    const keyword = third ? (second as string) : first;
+    const factory = third || (second as () => Promise<YoutubeSearchResponse>);
+    const cacheKey = `${cacheScope}:${this.normalizeKeyword(keyword)}`;
     const cachedResponse = this.get(cacheKey);
     if (cachedResponse) {
-      this.logger.debug(`YouTube search cache hit for "${cacheKey}".`);
+      this.logger.debug('YouTube search cache hit.');
       return Promise.resolve(cachedResponse);
     }
 
     const pendingRequest = this.inFlight.get(cacheKey);
     if (pendingRequest) {
-      this.logger.debug(`Joined in-flight YouTube search for "${cacheKey}".`);
+      this.logger.debug('Joined in-flight YouTube search.');
       return pendingRequest;
     }
 

@@ -31,7 +31,7 @@ export class YoutubeService {
     private readonly searchCacheService: YoutubeSearchCacheService,
   ) {}
 
-  getKeyAliases(visitorId?: string): YoutubeKeyAliasesResponse {
+  getKeyAliases(userId?: string): YoutubeKeyAliasesResponse {
     const configuredKeys = this.getConfiguredApiKeys();
     const aliases = Object.keys(configuredKeys);
 
@@ -45,14 +45,14 @@ export class YoutubeService {
           : aliases[0];
 
       return {
-        aliases: this.withPersonalAlias(aliases, visitorId),
+        aliases: this.withPersonalAlias(aliases, userId),
         defaultAlias,
       };
     }
 
     if (this.configService.get<string>('YOUTUBE_API_KEY')?.trim()) {
       return {
-        aliases: this.withPersonalAlias(['default'], visitorId),
+        aliases: this.withPersonalAlias(['default'], userId),
         defaultAlias: 'default',
       };
     }
@@ -63,17 +63,19 @@ export class YoutubeService {
   async search(
     searchQuery: string,
     requestedKeyAlias?: string,
-    visitorId?: string,
+    userId?: string,
   ): Promise<YoutubeSearchResponse> {
     const normalizedQuery = this.normalizeQuery(searchQuery);
-    const apiKey = this.resolveApiKey(requestedKeyAlias, visitorId);
+    const credential = this.resolveCredential(requestedKeyAlias, userId);
 
     const effectiveQuery = normalizedQuery.toLowerCase().includes('karaoke')
       ? normalizedQuery
       : `${normalizedQuery} Karaoke`;
 
-    return this.searchCacheService.getOrCreate(effectiveQuery, () =>
-      this.fetchSearch(effectiveQuery, apiKey),
+    return this.searchCacheService.getOrCreate(
+      credential.cacheScope,
+      effectiveQuery,
+      () => this.fetchSearch(effectiveQuery, credential.apiKey),
     );
   }
 
@@ -165,12 +167,21 @@ export class YoutubeService {
     return normalized;
   }
 
-  private resolveApiKey(
+  private resolveCredential(
     requestedAlias?: string,
-    visitorId?: string,
-  ): string {
+    userId?: string,
+  ): { apiKey: string; cacheScope: string } {
     if (requestedAlias?.trim() === YoutubePersonalKeyService.alias) {
-      return this.personalKeyService.resolve(visitorId ?? '');
+      if (!userId) {
+        throw new BadRequestException({
+          code: 'personal_key_authentication_required',
+          message: 'Sign in to use a personal YouTube API key.',
+        });
+      }
+      return {
+        apiKey: this.personalKeyService.resolve(userId),
+        cacheScope: `personal:${userId}`,
+      };
     }
 
     const configuredKeys = this.getConfiguredApiKeys();
@@ -191,7 +202,7 @@ export class YoutubeService {
         });
       }
 
-      return selectedKey;
+      return { apiKey: selectedKey, cacheScope: `server:${selectedAlias}` };
     }
 
     const singleApiKey = this.configService
@@ -204,7 +215,7 @@ export class YoutubeService {
           message: 'The selected YouTube API key is not available.',
         });
       }
-      return singleApiKey;
+      return { apiKey: singleApiKey, cacheScope: 'server:default' };
     }
 
     this.throwMissingKeyConfiguration();
@@ -212,9 +223,9 @@ export class YoutubeService {
 
   private withPersonalAlias(
     aliases: string[],
-    visitorId?: string,
+    userId?: string,
   ): string[] {
-    return this.personalKeyService.has(visitorId)
+    return this.personalKeyService.has(userId)
       ? [...aliases, YoutubePersonalKeyService.alias]
       : aliases;
   }

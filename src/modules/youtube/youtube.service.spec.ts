@@ -106,11 +106,11 @@ describe('YoutubeService', () => {
     expect(new URL(requestUrl).searchParams.get('key')).toBe(backupApiKey);
   });
 
-  it('uses a personal key only for the exact matching visitor ID', async () => {
-    const visitorId = '123e4567-e89b-42d3-a456-426614174000';
-    const otherVisitorId = '123e4567-e89b-42d3-a456-426614174001';
+  it('uses a personal key only for the exact matching authenticated user ID', async () => {
+    const userA = '123e4567-e89b-42d3-a456-426614174000';
+    const userB = '123e4567-e89b-42d3-a456-426614174001';
     const personalKey = `AIza${'a'.repeat(35)}`;
-    personalKeyService.register(visitorId, personalKey);
+    personalKeyService.register(userA, personalKey);
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ items: [] }), {
         status: 200,
@@ -118,17 +118,17 @@ describe('YoutubeService', () => {
       }),
     );
 
-    expect(service.getKeyAliases(visitorId).aliases).toContain(
+    expect(service.getKeyAliases(userA).aliases).toContain(
       YoutubePersonalKeyService.alias,
     );
-    expect(service.getKeyAliases(otherVisitorId).aliases).not.toContain(
+    expect(service.getKeyAliases(userB).aliases).not.toContain(
       YoutubePersonalKeyService.alias,
     );
 
     await service.search(
       'personal test',
       YoutubePersonalKeyService.alias,
-      visitorId,
+      userA,
     );
     const requestUrl = String(fetchMock.mock.calls[0][0]);
     expect(new URL(requestUrl).searchParams.get('key')).toBe(personalKey);
@@ -137,7 +137,7 @@ describe('YoutubeService', () => {
       service.search(
         'wrong visitor',
         YoutubePersonalKeyService.alias,
-        otherVisitorId,
+        userB,
       ),
     ).rejects.toMatchObject({ status: 404 });
   });
