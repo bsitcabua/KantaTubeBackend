@@ -43,13 +43,12 @@ export class YoutubeSearchCacheService {
     const cacheScope = third ? first : 'server:default';
     const keyword = third ? (second as string) : first;
     const factory = third || (second as () => Promise<YoutubeSearchResponse>);
-    const cacheKey = `${cacheScope}:${this.normalizeKeyword(keyword)}`;
-    const cachedResponse = this.get(cacheKey);
+    const cachedResponse = this.getCached(cacheScope, keyword);
     if (cachedResponse) {
-      this.logger.debug('YouTube search cache hit.');
       return Promise.resolve(cachedResponse);
     }
 
+    const cacheKey = this.getCacheKey(cacheScope, keyword);
     const pendingRequest = this.inFlight.get(cacheKey);
     if (pendingRequest) {
       this.logger.debug('Joined in-flight YouTube search.');
@@ -67,6 +66,17 @@ export class YoutubeSearchCacheService {
 
     this.inFlight.set(cacheKey, request);
     return request;
+  }
+
+  getCached(
+    cacheScope: string,
+    keyword: string,
+  ): YoutubeSearchResponse | undefined {
+    const cachedResponse = this.get(this.getCacheKey(cacheScope, keyword));
+    if (cachedResponse) {
+      this.logger.debug('YouTube search cache hit.');
+    }
+    return cachedResponse;
   }
 
   private get(cacheKey: string): YoutubeSearchResponse | undefined {
@@ -116,6 +126,10 @@ export class YoutubeSearchCacheService {
 
   private normalizeKeyword(keyword: string): string {
     return keyword.trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  private getCacheKey(cacheScope: string, keyword: string): string {
+    return `${cacheScope}:${this.normalizeKeyword(keyword)}`;
   }
 
   private getPositiveInteger(name: string, fallback: number): number {

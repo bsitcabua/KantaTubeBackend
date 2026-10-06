@@ -33,6 +33,24 @@ npm install
 npm run migration:run
 ```
 
+## YouTube server-key fallback
+
+Configure server keys as a JSON alias map and select the normal starting alias:
+
+```dotenv
+YOUTUBE_API_KEYS={"primary":"KEY_A","backup1":"KEY_B"}
+YOUTUBE_DEFAULT_API_KEY_ALIAS=primary
+AUTO_SWITCH_KEY=false
+```
+
+`AUTO_SWITCH_KEY` is parsed explicitly and defaults to `false`; invalid values
+also disable fallback. When enabled, a confirmed quota error tries the selected
+server alias first, followed by the remaining aliases in configuration order.
+Personal keys never enter this fallback path. A quota-exhausted alias is
+tracked by alias only and skipped for 10 minutes in the current backend
+process. This state is intentionally process-local and is not shared between
+horizontally scaled instances.
+
 ## Compile and run the project
 
 ```bash
