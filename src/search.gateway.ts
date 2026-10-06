@@ -90,6 +90,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const pairingToken = this.stringValue(auth.pairingToken, 256);
       const grantToken = this.stringValue(auth.grantToken, 256);
       const hostToken = this.stringValue(auth.hostToken, 256);
+      const socketTicket = this.stringValue(auth.socketTicket, 4096);
 
       if (pairingToken && deviceId) {
         if (!this.isUuid(deviceId))
@@ -118,7 +119,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         await this.connectGuestMain(client, sessionId, hostToken);
         return;
       }
-      await this.connectMain(client, sessionId);
+      await this.connectMain(client, sessionId, socketTicket);
     } catch (error) {
       const socketError = this.errorPayload(error);
       this.logger.warn(`Rejected socket connection: ${socketError.code}`);
@@ -432,11 +433,15 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return this.handleMainResponse(client, 'updateMenuModeFromMain', payload);
   }
 
-  private async connectMain(client: Socket, sessionId: string): Promise<void> {
+  private async connectMain(
+    client: Socket,
+    sessionId: string,
+    socketTicket: string,
+  ): Promise<void> {
     const auth = this.authService();
-    const user = await auth.authenticate(
-      this.readCookie(client, auth.cookieName),
-    );
+    const user = socketTicket
+      ? await auth.authenticateSocketTicket(socketTicket)
+      : await auth.authenticate(this.readCookie(client, auth.cookieName));
     if (!user || !sessionId)
       throw this.socketException(
         'SESSION_NOT_FOUND',

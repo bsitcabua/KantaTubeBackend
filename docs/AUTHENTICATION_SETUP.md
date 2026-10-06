@@ -100,6 +100,7 @@ The backend verifies the Google ID-token signature through Google's JWKS and che
 - `GET /api/auth/facebook`
 - `GET /api/auth/facebook/callback`
 - `GET /api/auth/me`
+- `GET /api/auth/socket-ticket`
 - `POST /api/auth/logout`
 - `POST /api/auth/logout-all`
 
@@ -108,6 +109,13 @@ The backend verifies the Google ID-token signature through Google's JWKS and che
 ## Guest and remote behavior
 
 Authenticated karaoke sessions are the authority for the main Socket.IO client. Remote QR codes now contain only a short-lived opaque pairing invitation such as `/?pair=<opaque-token>`; visitor IDs remain telemetry identity only and never authorize a remote or a room.
+
+The production frontend is served from Vercel while Socket.IO is served by
+Render. Before an authenticated main socket connects, the frontend requests a
+short-lived application socket ticket through `/api/auth/socket-ticket` using
+the HttpOnly application session cookie. The ticket is scoped to that
+application session and is not a Google access token. Guest hosts continue to
+use their separate guest host capability.
 
 Future Favorites and Playlists should have a non-null `userId` foreign key for account-owned records. Guest data can remain local until an explicit authenticated migration endpoint is designed. That endpoint must prove control of the guest identity, deduplicate records, and never accept an arbitrary caller-supplied guest ID as sufficient authorization.
 
