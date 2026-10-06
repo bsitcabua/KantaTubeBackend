@@ -10,8 +10,10 @@ import { AuthModule } from './modules/auth/auth.module';
 import { getDatabaseOptions } from './database/database.config';
 import { KaraokeModule } from './modules/karaoke/karaoke.module';
 import { RateLimiterModule } from './common/rate-limit/rate-limiter.module';
+import { PublicConfigController } from './config/public-config.controller';
 
 @Module({
+  controllers: [PublicConfigController],
   providers: [SearchGateway],
   imports: [
     ConfigModule.forRoot({

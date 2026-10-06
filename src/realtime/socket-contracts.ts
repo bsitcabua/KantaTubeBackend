@@ -22,6 +22,7 @@ export const MAIN_RESPONSE_EVENTS = [
   'songReserved',
   'videoStatus',
   'searchResults',
+  'queueError',
   'performers',
   'toggleScoreFromMain',
   'toggleThemeModeFromMain',
@@ -59,6 +60,7 @@ export type SocketErrorCode =
   | 'INVALID_PAYLOAD'
   | 'RATE_LIMITED'
   | 'MAIN_CLIENT_OFFLINE'
+  | 'QUEUE_FULL'
   | 'DUPLICATE_MAIN_CLIENT';
 
 export interface SocketErrorPayload {

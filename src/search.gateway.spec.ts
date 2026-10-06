@@ -236,6 +236,28 @@ describe('SearchGateway', () => {
     );
   });
 
+  it('forwards a typed queue-full response to remotes without treating it as disconnect', async () => {
+    const main = createClient({ sessionId }, 'main-socket');
+    await gateway.handleConnection(main);
+
+    const result = await gateway.queueError(main, {
+      event: 'queueError',
+      data: {
+        code: 'QUEUE_FULL',
+        message: 'Song reserve list is full (15/15).',
+        queueCount: 15,
+        maxQueueSize: 15,
+        requestId: 'search-1',
+      },
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(roomEmit).toHaveBeenCalledWith('queueError', {
+      event: 'queueError',
+      data: expect.objectContaining({ code: 'QUEUE_FULL', queueCount: 15 }),
+    });
+  });
+
   it('rejects a remote command when grant revalidation reports an expired grant', async () => {
     const main = createClient({ sessionId }, 'main-socket');
     const remote = createClient(

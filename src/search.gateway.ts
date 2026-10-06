@@ -377,6 +377,10 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   searchResults(client: Socket, payload: SocketEnvelope): Promise<SocketAck> {
     return this.handleMainResponse(client, 'searchResults', payload);
   }
+  @SubscribeMessage('queueError')
+  queueError(client: Socket, payload: SocketEnvelope): Promise<SocketAck> {
+    return this.handleMainResponse(client, 'queueError', payload);
+  }
   @SubscribeMessage('performers')
   performers(client: Socket, payload: SocketEnvelope): Promise<SocketAck> {
     return this.handleMainResponse(client, 'performers', payload);
@@ -750,6 +754,18 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const results = this.recordField(data)?.searchResults;
       return Array.isArray(results) && results.length <= 200;
     }
+    if (eventName === 'queueError') {
+      const record = this.recordField(data);
+      return (
+        !!record &&
+        record.code === 'QUEUE_FULL' &&
+        this.stringField(record, 'message', 300) !== null &&
+        Number.isSafeInteger(record.queueCount) &&
+        (record.queueCount as number) >= 0 &&
+        Number.isSafeInteger(record.maxQueueSize) &&
+        (record.maxQueueSize as number) > 0
+      );
+    }
     if (eventName === 'songReserved') return !!this.recordField(data);
     if (eventName === 'toggleThemeModeFromMain')
       return typeof data === 'boolean';
@@ -1017,6 +1033,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       'INVALID_PAYLOAD',
       'RATE_LIMITED',
       'MAIN_CLIENT_OFFLINE',
+      'QUEUE_FULL',
       'DUPLICATE_MAIN_CLIENT',
     ].includes(value as string);
   }
