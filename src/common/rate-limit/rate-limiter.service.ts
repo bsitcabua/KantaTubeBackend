@@ -6,6 +6,39 @@ interface RateLimitBucket {
 
 @Injectable()
 export class RateLimiterService {
+  private readonly socketPolicies: Record<
+    string,
+    { limit: number; windowMs: number }
+  > = {
+    onSearch: { limit: 8, windowMs: 30_000 },
+    reserveSong: { limit: 20, windowMs: 10_000 },
+    nextSong: { limit: 20, windowMs: 10_000 },
+    stopAllSong: { limit: 20, windowMs: 10_000 },
+    addPerformer: { limit: 20, windowMs: 10_000 },
+    removePerformer: { limit: 20, windowMs: 10_000 },
+    clearAllPerformers: { limit: 20, windowMs: 10_000 },
+    playVideo: { limit: 30, windowMs: 10_000 },
+    pauseVideo: { limit: 30, windowMs: 10_000 },
+    toggleScore: { limit: 20, windowMs: 10_000 },
+    toggleThemeMode: { limit: 20, windowMs: 10_000 },
+    updatePrimaryColor: { limit: 20, windowMs: 10_000 },
+    updateKey: { limit: 10, windowMs: 10_000 },
+    updatePresets: { limit: 20, windowMs: 10_000 },
+    updateMenuMode: { limit: 20, windowMs: 10_000 },
+  };
+
+  allowSocketEvent(clientKey: string, eventName: string): boolean {
+    const policy = this.socketPolicies[eventName] ?? {
+      limit: 30,
+      windowMs: 10_000,
+    };
+    return this.tryConsume(
+      `socket:${clientKey}:${eventName}`,
+      policy.limit,
+      policy.windowMs,
+    );
+  }
+
   checkSearch(clientId: string): void {
     this.check(`search:${clientId}`, 20, 60_000, 'youtube_search_rate_limited');
   }
@@ -75,6 +108,28 @@ export class RateLimiterService {
     bucket.timestamps.push(now);
     this.buckets.set(bucketKey, bucket);
     this.trimBuckets();
+  }
+
+  private tryConsume(
+    bucketKey: string,
+    limit: number,
+    windowMs: number,
+  ): boolean {
+    const now = Date.now();
+    const cutoff = now - windowMs;
+    const bucket = this.buckets.get(bucketKey) ?? { timestamps: [] };
+    bucket.timestamps = bucket.timestamps.filter(
+      (timestamp) => timestamp > cutoff,
+    );
+    if (bucket.timestamps.length >= limit) {
+      this.buckets.set(bucketKey, bucket);
+      this.trimBuckets();
+      return false;
+    }
+    bucket.timestamps.push(now);
+    this.buckets.set(bucketKey, bucket);
+    this.trimBuckets();
+    return true;
   }
 
   private trimBuckets(): void {

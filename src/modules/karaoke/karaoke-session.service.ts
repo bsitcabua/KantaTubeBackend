@@ -395,11 +395,19 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       const item = value as Record<string, unknown>;
       const videoId = this.requiredString(item.videoId, 20, 'videoId');
       if (!/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) {
-        throw new BadRequestException(`Queue item ${index + 1} has an invalid videoId.`);
+        throw new BadRequestException(
+          `Queue item ${index + 1} has an invalid videoId.`,
+        );
       }
-      const thumbnails = this.requiredString(item.thumbnails, 2048, 'thumbnails');
+      const thumbnails = this.requiredString(
+        item.thumbnails,
+        2048,
+        'thumbnails',
+      );
       if (!/^https?:\/\//i.test(thumbnails)) {
-        throw new BadRequestException(`Queue item ${index + 1} has an invalid thumbnail URL.`);
+        throw new BadRequestException(
+          `Queue item ${index + 1} has an invalid thumbnail URL.`,
+        );
       }
       return {
         videoId,
@@ -426,7 +434,11 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private normalizeAlias(value: unknown): string {
-    if (typeof value !== 'string' || !value.trim() || value.trim().length > 20) {
+    if (
+      typeof value !== 'string' ||
+      !value.trim() ||
+      value.trim().length > 20
+    ) {
       throw new BadRequestException(
         'Session name must be between 1 and 20 characters.',
       );
