@@ -22,6 +22,10 @@ import { EmailVerificationCode } from './entities/email-verification-code.entity
 import { EmailService } from './email.service';
 import { PasswordOtp, PasswordOtpPurpose } from './entities/password-otp.entity';
 import { AccountRecoveryReference } from './entities/account-recovery-reference.entity';
+import {
+  createSocketTicket,
+  verifySocketTicket,
+} from './socket-ticket';
 
 export interface StartedOAuthLogin {
   authorizationUrl: string;
@@ -731,6 +735,55 @@ export class AuthService {
       session.lastUsedAt = new Date();
       await this.sessions.save(session);
     }
+    return session.user;
+  }
+
+  async issueSocketTicket(rawToken?: string): Promise<{ ticket: string; expiresAt: Date }> {
+    if (!rawToken) throw new UnauthorizedException();
+    const session = await this.sessions.findOne({
+      where: {
+        tokenHash: this.hash(rawToken),
+        revokedAt: IsNull(),
+        expiresAt: MoreThan(new Date()),
+      },
+      relations: { user: true },
+    });
+    if (!session?.user || session.user.status !== UserStatus.ACTIVE || session.user.deletedAt) {
+      throw new UnauthorizedException();
+    }
+
+    return createSocketTicket(session.id, session.userId, session.tokenHash);
+  }
+
+  async authenticateSocketTicket(rawTicket?: string): Promise<User | null> {
+    if (typeof rawTicket !== 'string' || !rawTicket.trim()) return null;
+
+    const parts = rawTicket.split('.');
+    if (parts.length !== 3 || parts[0] !== 'v1') return null;
+    const encodedClaims = parts[1];
+    if (!encodedClaims) return null;
+
+    let claims: { authSessionId?: unknown; userId?: unknown };
+    try {
+      claims = JSON.parse(Buffer.from(encodedClaims, 'base64url').toString('utf8')) as {
+        authSessionId?: unknown;
+        userId?: unknown;
+      };
+    } catch {
+      return null;
+    }
+    if (typeof claims.authSessionId !== 'string' || typeof claims.userId !== 'string') return null;
+
+    const session = await this.sessions.findOne({
+      where: { id: claims.authSessionId },
+      relations: { user: true },
+    });
+    if (!session?.user || session.userId !== claims.userId) return null;
+    if (session.user.status !== UserStatus.ACTIVE || session.user.deletedAt) return null;
+    if (session.revokedAt || session.expiresAt.getTime() <= Date.now()) return null;
+
+    const verified = verifySocketTicket(rawTicket, session.tokenHash);
+    if (!verified || verified.authSessionId !== session.id || verified.userId !== session.userId) return null;
     return session.user;
   }
 

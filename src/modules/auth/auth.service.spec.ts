@@ -178,6 +178,24 @@ describe('AuthService', () => {
     ).resolves.toBeNull();
   });
 
+  it('issues and validates a socket ticket without exposing the application session token', async () => {
+    const rawToken = 'application-session-token';
+    const context = setup();
+    const session = {
+      id: 'auth-session-1',
+      userId: 'user-1',
+      tokenHash: (context.service as any).hash(rawToken),
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      user: { id: 'user-1', status: UserStatus.ACTIVE, deletedAt: null },
+    };
+    context.sessions.findOne.mockResolvedValue(session);
+
+    const issued = await context.service.issueSocketTicket(rawToken);
+    expect(issued.ticket).not.toContain(rawToken);
+    await expect(context.service.authenticateSocketTicket(issued.ticket)).resolves.toEqual(session.user);
+  });
+
   it('rejects reusing the current password during a password reset', async () => {
     const context = setup();
     const currentPassword = 'StrongPassword123!';
