@@ -104,6 +104,14 @@ export class AuthController {
     return this.auth.getCurrentUser(user.id);
   }
 
+  @Get('socket-ticket')
+  @UseGuards(SessionAuthGuard)
+  socketTicket(@Req() request: Request) {
+    return this.auth.issueSocketTicket(
+      this.readCookie(request, this.auth.cookieName),
+    );
+  }
+
   @Patch('profile')
   @UseGuards(OriginGuard, SessionAuthGuard)
   updateProfile(@CurrentUser() user: User, @Body() body: { fullName?: string; phoneNumber?: string; addressLine?: string; city?: string; province?: string; postalCode?: string; country?: string }) {
