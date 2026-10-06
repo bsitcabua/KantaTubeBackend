@@ -5,20 +5,17 @@ import { VisitorsModule } from './modules/visitors/visitors.module';
 import { SearchGateway } from './search.gateway';
 import { SearchLogsModule } from './modules/search-logs/search-logs.module';
 import { BugReportModule } from './modules/bug-report/bug-report.module';
-import { ServeStaticModule } from '@nestjs/serve-static';
-import { join } from 'path';
 import { YoutubeModule } from './modules/youtube/youtube.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { getDatabaseOptions } from './database/database.config';
 import { KaraokeModule } from './modules/karaoke/karaoke.module';
+import { RateLimiterModule } from './common/rate-limit/rate-limiter.module';
+import { PublicConfigController } from './config/public-config.controller';
 
 @Module({
+  controllers: [PublicConfigController],
   providers: [SearchGateway],
   imports: [
-    ServeStaticModule.forRoot({
-      rootPath: join(process.cwd(), 'uploads'),
-      serveRoot: '/uploads',
-    }),
     ConfigModule.forRoot({
       isGlobal: true, // Makes the config available globally
     }),
@@ -29,6 +26,7 @@ import { KaraokeModule } from './modules/karaoke/karaoke.module';
     YoutubeModule,
     AuthModule,
     KaraokeModule,
+    RateLimiterModule,
   ],
 })
 export class AppModule {}

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SearchLogs } from './entities/search-logs.entity';
+import { SearchLogCreateDto } from './search-logs.dto';
 
 @Injectable()
 export class SearchLogsService {
@@ -15,7 +16,7 @@ export class SearchLogsService {
         return this.searchLogsRepo.find();
     }
     
-    async create(search: Partial<SearchLogs>): Promise<SearchLogs> {
+    async create(search: SearchLogCreateDto): Promise<SearchLogs> {
         const data = this.searchLogsRepo.create(search);
         return this.searchLogsRepo.save(data);
     }

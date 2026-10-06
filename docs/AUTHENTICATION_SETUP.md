@@ -107,7 +107,7 @@ The backend verifies the Google ID-token signature through Google's JWKS and che
 
 ## Guest and remote behavior
 
-The existing random `visitorID` remains guest/room identity and is deliberately separate from account authentication. It can be shared in a remote QR URL, so it must never authorize access to account-owned private data. OAuth preserves safe internal return paths such as `/?remote=<visitorID>`.
+Authenticated karaoke sessions are the authority for the main Socket.IO client. Remote QR codes now contain only a short-lived opaque pairing invitation such as `/?pair=<opaque-token>`; visitor IDs remain telemetry identity only and never authorize a remote or a room.
 
 Future Favorites and Playlists should have a non-null `userId` foreign key for account-owned records. Guest data can remain local until an explicit authenticated migration endpoint is designed. That endpoint must prove control of the guest identity, deduplicate records, and never accept an arbitrary caller-supplied guest ID as sufficient authorization.
 

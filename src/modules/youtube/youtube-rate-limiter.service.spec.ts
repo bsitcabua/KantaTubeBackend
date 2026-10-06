@@ -19,4 +19,13 @@ describe('YoutubeRateLimiterService', () => {
 
     expect(() => service.checkSearch('client')).toThrow();
   });
+
+  it('limits public bug-report submissions per client', () => {
+    const service = new YoutubeRateLimiterService();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      service.checkBugReport('client');
+    }
+
+    expect(() => service.checkBugReport('client')).toThrow();
+  });
 });

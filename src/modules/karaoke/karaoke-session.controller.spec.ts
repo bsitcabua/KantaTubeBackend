@@ -9,7 +9,9 @@ describe('KaraokeSessionController', () => {
   const user = { id: '123e4567-e89b-42d3-a456-426614174000' } as User;
   const sessionId = '123e4567-e89b-42d3-a456-426614174001';
 
-  function createController() {
+  function createController(remoteAuthorization?: {
+    renewActiveGrantsForSession: jest.Mock;
+  }) {
     const service = {
       create: jest.fn(),
       listActive: jest.fn(),
@@ -18,7 +20,10 @@ describe('KaraokeSessionController', () => {
       end: jest.fn(),
     } as unknown as KaraokeSessionService;
     return {
-      controller: new KaraokeSessionController(service),
+      controller: new KaraokeSessionController(
+        service,
+        remoteAuthorization as never,
+      ),
       service: service as jest.Mocked<KaraokeSessionService>,
     };
   }
@@ -54,5 +59,35 @@ describe('KaraokeSessionController', () => {
     expect(service.get).toHaveBeenCalledWith(user.id, sessionId);
     expect(service.heartbeat).toHaveBeenCalledWith(user.id, sessionId);
     expect(service.end).toHaveBeenCalledWith(user.id, sessionId);
+  });
+
+  it('renews remote grants only after a successful owned heartbeat', async () => {
+    const remoteAuthorization = {
+      renewActiveGrantsForSession: jest.fn().mockResolvedValue(1),
+    };
+    const { controller, service } = createController(remoteAuthorization);
+    service.heartbeat.mockResolvedValue({} as never);
+
+    await controller.heartbeat(user, sessionId);
+
+    expect(service.heartbeat).toHaveBeenCalledWith(user.id, sessionId);
+    expect(
+      remoteAuthorization.renewActiveGrantsForSession,
+    ).toHaveBeenCalledWith(sessionId);
+  });
+
+  it('does not renew grants when the heartbeat fails', async () => {
+    const remoteAuthorization = {
+      renewActiveGrantsForSession: jest.fn(),
+    };
+    const { controller, service } = createController(remoteAuthorization);
+    service.heartbeat.mockRejectedValue(new Error('heartbeat failed'));
+
+    await expect(controller.heartbeat(user, sessionId)).rejects.toThrow(
+      'heartbeat failed',
+    );
+    expect(
+      remoteAuthorization.renewActiveGrantsForSession,
+    ).not.toHaveBeenCalled();
   });
 });
