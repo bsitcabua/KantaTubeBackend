@@ -366,6 +366,33 @@ export class RemoteAuthorizationService {
     return grant;
   }
 
+  async renewActiveGrantsForSession(sessionId: string): Promise<number> {
+    await this.findActiveSessionById(sessionId);
+    const now = new Date();
+    const renewalThreshold = new Date(
+      now.getTime() + this.grantLifetimeMs / 2,
+    );
+    const candidateExpiry = new Date(now.getTime() + this.grantLifetimeMs);
+    const result = await this.grants
+      .createQueryBuilder()
+      .update(KaraokeRemoteGrant)
+      .set({ expiresAt: candidateExpiry })
+      .where('karaokeSessionId = :sessionId', { sessionId })
+      .andWhere('status = :status', {
+        status: KaraokeRemoteGrantStatus.APPROVED,
+      })
+      .andWhere('expiresAt > :now', { now })
+      .andWhere('expiresAt <= :renewalThreshold', { renewalThreshold })
+      .execute();
+    const renewed = result.affected ?? 0;
+    if (renewed > 0) {
+      this.logger.log(
+        `Renewed ${renewed} active remote grant(s) for session ${this.safeId(sessionId)}`,
+      );
+    }
+    return renewed;
+  }
+
   async revokeAll(
     sessionId: string,
     sessionKind: RemoteSessionKind = 'karaoke',

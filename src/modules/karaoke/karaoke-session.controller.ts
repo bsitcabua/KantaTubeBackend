@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   Param,
   Post,
   Put,
@@ -18,6 +19,8 @@ import { RemoteAuthorizationService } from './remote-authorization.service';
 @Controller('karaoke-sessions')
 @UseGuards(SessionAuthGuard)
 export class KaraokeSessionController {
+  private readonly logger = new Logger(KaraokeSessionController.name);
+
   constructor(
     private readonly sessions: KaraokeSessionService,
     @Optional()
@@ -66,8 +69,19 @@ export class KaraokeSessionController {
 
   @Post(':sessionId/heartbeat')
   @UseGuards(OriginGuard)
-  heartbeat(@CurrentUser() user: User, @Param('sessionId') sessionId: string) {
-    return this.sessions.heartbeat(user.id, sessionId);
+  async heartbeat(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+  ) {
+    const result = await this.sessions.heartbeat(user.id, sessionId);
+    try {
+      await this.remoteAuthorization?.renewActiveGrantsForSession(sessionId);
+    } catch (error) {
+      this.logger.warn(
+        `Unable to renew remote grants for session ${sessionId.slice(0, 8)}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+    return result;
   }
 
   @Post(':sessionId/end')

@@ -184,6 +184,37 @@ describe('SearchGateway', () => {
     );
   });
 
+  it('rejects a remote command when grant revalidation reports an expired grant', async () => {
+    const main = createClient({ sessionId }, 'main-socket');
+    const remote = createClient(
+      {
+        pairingToken: 'pairing-token-value-123456789012345678901234567890',
+        deviceId,
+      },
+      'remote-socket',
+    );
+    await gateway.handleConnection(main);
+    await gateway.handleConnection(remote);
+    await gateway.approveRemoteConnection(main, { requestId: grantId });
+    authorization.assertGrantActive.mockRejectedValue({
+      response: {
+        code: 'REMOTE_NOT_AUTHORIZED',
+        message: 'Remote device is not approved.',
+      },
+    });
+
+    const result = await gateway.onSearch(remote, {
+      event: 'onSearch',
+      data: { search: 'test' },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'REMOTE_NOT_AUTHORIZED' },
+    });
+    expect(main.emit).not.toHaveBeenCalledWith('onSearch', expect.anything());
+  });
+
   it('rejects malformed payloads and throttled commands', async () => {
     const main = createClient({ sessionId }, 'main-socket');
     const remote = createClient(
