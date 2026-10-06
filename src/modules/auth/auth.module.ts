@@ -13,6 +13,7 @@ import { AccountRecoveryReference } from './entities/account-recovery-reference.
 import { OAuthRateLimitGuard } from './guards/oauth-rate-limit.guard';
 import { OriginGuard } from './guards/origin.guard';
 import { SessionAuthGuard } from './guards/session-auth.guard';
+import { OptionalSessionAuthGuard } from './guards/optional-session-auth.guard';
 import { FacebookAuthProvider } from './providers/facebook-auth.provider';
 import { GoogleAuthProvider } from './providers/google-auth.provider';
 
@@ -34,10 +35,16 @@ import { GoogleAuthProvider } from './providers/google-auth.provider';
     GoogleAuthProvider,
     FacebookAuthProvider,
     SessionAuthGuard,
+    OptionalSessionAuthGuard,
     OriginGuard,
     OAuthRateLimitGuard,
     EmailService,
   ],
-  exports: [AuthService, SessionAuthGuard],
+  exports: [
+    AuthService,
+    SessionAuthGuard,
+    OptionalSessionAuthGuard,
+    OriginGuard,
+  ],
 })
 export class AuthModule {}

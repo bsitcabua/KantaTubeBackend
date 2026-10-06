@@ -36,9 +36,10 @@ async function bootstrap() {
     next();
   });
 
-  // ADD THIS to allow payloads up to 50mb (or larger)
-  app.use(json({ limit: '50mb' }));
-  app.use(urlencoded({ extended: true, limit: '50mb' }));
+  // Keep ordinary request bodies bounded. Multipart bug-report uploads have
+  // their own 5 MB Multer limit in the feature controller.
+  app.use(json({ limit: '2mb' }));
+  app.use(urlencoded({ extended: true, limit: '2mb' }));
 
   // Set global API prefix for all routes
   app.setGlobalPrefix('api');

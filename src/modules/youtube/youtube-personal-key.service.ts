@@ -14,7 +14,7 @@ import {
 export class YoutubePersonalKeyService {
   static readonly alias = 'personal_session';
 
-  private readonly keysByVisitorId = new Map<string, string>();
+  private readonly keysByUserId = new Map<string, string>();
   private readonly maxSessions: number;
 
   constructor(private readonly configService: ConfigService) {
@@ -27,14 +27,14 @@ export class YoutubePersonalKeyService {
         : 200;
   }
 
-  register(visitorId: string, apiKey: string): YoutubePersonalKeyStatusResponse {
+  register(userId: string, apiKey: string): YoutubePersonalKeyStatusResponse {
     this.ensureEnabled();
-    const normalizedVisitorId = this.validateVisitorId(visitorId);
+    const normalizedUserId = this.validateUserId(userId);
     const normalizedApiKey = this.validateApiKey(apiKey);
 
     if (
-      !this.keysByVisitorId.has(normalizedVisitorId) &&
-      this.keysByVisitorId.size >= this.maxSessions
+      !this.keysByUserId.has(normalizedUserId) &&
+      this.keysByUserId.size >= this.maxSessions
     ) {
       throw new ServiceUnavailableException({
         code: 'personal_key_capacity_reached',
@@ -43,64 +43,64 @@ export class YoutubePersonalKeyService {
       });
     }
 
-    this.keysByVisitorId.set(normalizedVisitorId, normalizedApiKey);
-    return this.getStatus(normalizedVisitorId);
+    this.keysByUserId.set(normalizedUserId, normalizedApiKey);
+    return this.getStatus(normalizedUserId);
   }
 
-  getStatus(visitorId: string): YoutubePersonalKeyStatusResponse {
+  getStatus(userId: string): YoutubePersonalKeyStatusResponse {
     this.ensureEnabled();
-    const normalizedVisitorId = this.validateVisitorId(visitorId);
+    const normalizedUserId = this.validateUserId(userId);
     return {
-      available: this.keysByVisitorId.has(normalizedVisitorId),
+      available: this.keysByUserId.has(normalizedUserId),
       alias: YoutubePersonalKeyService.alias,
     };
   }
 
-  remove(visitorId: string): YoutubePersonalKeyDeleteResponse {
+  remove(userId: string): YoutubePersonalKeyDeleteResponse {
     this.ensureEnabled();
-    const normalizedVisitorId = this.validateVisitorId(visitorId);
-    return { removed: this.keysByVisitorId.delete(normalizedVisitorId) };
+    const normalizedUserId = this.validateUserId(userId);
+    return { removed: this.keysByUserId.delete(normalizedUserId) };
   }
 
-  resolve(visitorId: string): string {
+  resolve(userId: string): string {
     this.ensureEnabled();
-    const normalizedVisitorId = this.validateVisitorId(visitorId);
-    const apiKey = this.keysByVisitorId.get(normalizedVisitorId);
+    const normalizedUserId = this.validateUserId(userId);
+    const apiKey = this.keysByUserId.get(normalizedUserId);
 
     if (!apiKey) {
       throw new NotFoundException({
         code: 'personal_key_not_registered',
         message:
-          'No personal YouTube API key is registered for this visitor session.',
+          'No personal YouTube API key is registered for this account.',
       });
     }
 
     return apiKey;
   }
 
-  has(visitorId?: string): boolean {
-    if (!visitorId || !this.isEnabled() || !this.isValidVisitorId(visitorId)) {
+  has(userId?: string): boolean {
+    if (!userId || !this.isEnabled() || !this.isValidUserId(userId)) {
       return false;
     }
 
-    return this.keysByVisitorId.has(visitorId.trim());
+    return this.keysByUserId.has(userId.trim());
   }
 
-  private validateVisitorId(visitorId: string): string {
-    const normalizedVisitorId = (visitorId ?? '').trim();
-    if (!this.isValidVisitorId(normalizedVisitorId)) {
+  private validateUserId(userId: string): string {
+    const normalizedUserId = (userId ?? '').trim();
+    if (!this.isValidUserId(normalizedUserId)) {
       throw new BadRequestException({
-        code: 'invalid_visitor_id',
-        message: 'A valid KantaTube visitor ID is required.',
+        code: 'invalid_user_id',
+        message: 'A valid authenticated user is required.',
       });
     }
 
-    return normalizedVisitorId;
+    return normalizedUserId;
   }
 
-  private isValidVisitorId(visitorId: string): boolean {
+  private isValidUserId(userId: string): boolean {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      visitorId,
+      userId,
     );
   }
 

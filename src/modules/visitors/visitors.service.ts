@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Visitor } from './entities/visitor.entity';
+import { VisitorCreateDto } from './visitors.dto';
 
 @Injectable()
 export class VisitorsService {
@@ -14,7 +15,7 @@ export class VisitorsService {
     return this.visitorsRepository.find();
   }
 
-  async create(visitorData: Partial<Visitor>): Promise<Visitor> {
+  async create(visitorData: VisitorCreateDto): Promise<Visitor> {
     const visitor = this.visitorsRepository.create(visitorData);
     return this.visitorsRepository.save(visitor);
   }

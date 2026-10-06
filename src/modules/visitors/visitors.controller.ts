@@ -1,16 +1,16 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { VisitorsService } from './visitors.service';
-import { Visitor } from './entities/visitor.entity';
+import { parseVisitorCreateDto } from './visitors.dto';
+import { RateLimiterService } from '../../common/rate-limit/rate-limiter.service';
 
 @Controller('visitors')
 export class VisitorsController {
 
-  constructor(private readonly visitorsService: VisitorsService) {}
-  
-  @Get()
-  findAll(): Promise<Visitor[]> {
-    return this.visitorsService.findAll();
-  }
+  constructor(
+    private readonly visitorsService: VisitorsService,
+    private readonly rateLimiter: RateLimiterService,
+  ) {}
 
   @Get('connecting')
   async connecting(): Promise<{ success: boolean; status: number }> {
@@ -21,7 +21,8 @@ export class VisitorsController {
   }
 
   @Post('create')
-  create(@Body() visitor: Partial<Visitor>): Promise<Visitor> {
-    return this.visitorsService.create(visitor);
+  create(@Body() visitor: unknown, @Req() request: Request) {
+    this.rateLimiter.checkVisitorCreation(request.ip || 'unknown');
+    return this.visitorsService.create(parseVisitorCreateDto(visitor));
   }
 }
