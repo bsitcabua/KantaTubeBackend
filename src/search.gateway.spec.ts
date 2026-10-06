@@ -95,6 +95,10 @@ describe('SearchGateway', () => {
       sessionId,
     );
     expect(main.join).toHaveBeenCalledWith(`karaoke:karaoke:${sessionId}`);
+    expect(main.emit).toHaveBeenCalledWith('mainRegistered', {
+      sessionId,
+      sessionKind: 'karaoke',
+    });
     expect(main.handshake.auth).not.toHaveProperty('role');
   });
 
@@ -125,6 +129,10 @@ describe('SearchGateway', () => {
       'guest-host-token-value',
     );
     expect(main.join).toHaveBeenCalledWith(`karaoke:guest:${guestSessionId}`);
+    expect(main.emit).toHaveBeenCalledWith('mainRegistered', {
+      sessionId: guestSessionId,
+      sessionKind: 'guest',
+    });
   });
 
   it('does not allow a visitor UUID or self-declared role to authorize a socket', async () => {

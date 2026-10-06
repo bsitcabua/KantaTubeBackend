@@ -470,6 +470,10 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .to(this.room(sessionId, 'karaoke'))
       .emit('mainClientStatus', { status: 'online' });
     this.notifyPendingRemotes(sessionId, 'karaoke', client);
+    client.emit('mainRegistered', {
+      sessionId,
+      sessionKind: 'karaoke',
+    });
   }
 
   private async connectGuestMain(
@@ -500,6 +504,10 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .to(this.room(sessionId, 'guest'))
       .emit('mainClientStatus', { status: 'online' });
     this.notifyPendingRemotes(sessionId, 'guest', client);
+    client.emit('mainRegistered', {
+      sessionId,
+      sessionKind: 'guest',
+    });
   }
 
   private async connectPendingRemote(
