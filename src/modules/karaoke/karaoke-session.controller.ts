@@ -1,21 +1,35 @@
-import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Logger,
+  Param,
+  Post,
+  Put,
+  UseGuards,
+  Optional,
+} from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OriginGuard } from '../auth/guards/origin.guard';
 import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
 import { User } from '../users/entities/user.entity';
 import { KaraokeSessionService } from './karaoke-session.service';
+import { RemoteAuthorizationService } from './remote-authorization.service';
 
 @Controller('karaoke-sessions')
 @UseGuards(SessionAuthGuard)
 export class KaraokeSessionController {
-  constructor(private readonly sessions: KaraokeSessionService) {}
+  private readonly logger = new Logger(KaraokeSessionController.name);
+
+  constructor(
+    private readonly sessions: KaraokeSessionService,
+    @Optional()
+    private readonly remoteAuthorization?: RemoteAuthorizationService,
+  ) {}
 
   @Post()
   @UseGuards(OriginGuard)
-  create(
-    @CurrentUser() user: User,
-    @Body() body: { alias?: unknown },
-  ) {
+  create(@CurrentUser() user: User, @Body() body: { alias?: unknown }) {
     return this.sessions.create(user.id, body?.alias);
   }
 
@@ -47,18 +61,43 @@ export class KaraokeSessionController {
   @Post(':sessionId/transfer')
   @UseGuards(OriginGuard)
   transfer(@CurrentUser() user: User, @Param('sessionId') sessionId: string) {
-    return this.sessions.transfer(user.id, sessionId);
+    return this.sessions.transfer(user.id, sessionId).then(async (result) => {
+      await this.remoteAuthorization?.invalidateSession(sessionId);
+      return result;
+    });
   }
 
   @Post(':sessionId/heartbeat')
   @UseGuards(OriginGuard)
-  heartbeat(@CurrentUser() user: User, @Param('sessionId') sessionId: string) {
-    return this.sessions.heartbeat(user.id, sessionId);
+  async heartbeat(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+  ) {
+    const result = await this.sessions.heartbeat(user.id, sessionId);
+    try {
+      await this.remoteAuthorization?.renewActiveGrantsForSession(sessionId);
+    } catch (error) {
+      this.logger.warn(
+        `Unable to renew remote grants for session ${sessionId.slice(0, 8)}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+    return result;
   }
 
   @Post(':sessionId/end')
   @UseGuards(OriginGuard)
-  end(@CurrentUser() user: User, @Param('sessionId') sessionId: string) {
-    return this.sessions.end(user.id, sessionId);
+  async end(@CurrentUser() user: User, @Param('sessionId') sessionId: string) {
+    const result = await this.sessions.end(user.id, sessionId);
+    await this.remoteAuthorization?.invalidateSession(sessionId);
+    return result;
+  }
+
+  @Post(':sessionId/remote-pairing')
+  @UseGuards(OriginGuard)
+  createRemotePairing(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.remoteAuthorization.createPairingToken(user.id, sessionId);
   }
 }

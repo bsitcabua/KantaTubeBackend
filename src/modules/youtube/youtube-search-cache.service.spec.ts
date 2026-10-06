@@ -88,4 +88,17 @@ describe('YoutubeSearchCacheService', () => {
 
     expect(factory).toHaveBeenCalledTimes(2);
   });
+
+  it('isolates equivalent queries by credential scope', async () => {
+    const cache = createCache();
+    const factory = jest.fn().mockResolvedValue(emptyResponse);
+
+    await cache.getOrCreate('server:primary', 'same query', factory);
+    await cache.getOrCreate('server:backup', 'same query', factory);
+    await cache.getOrCreate('personal:user-a', 'same query', factory);
+    await cache.getOrCreate('personal:user-b', 'same query', factory);
+    await cache.getOrCreate('server:primary', 'same query', factory);
+
+    expect(factory).toHaveBeenCalledTimes(4);
+  });
 });

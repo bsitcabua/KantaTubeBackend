@@ -27,19 +27,31 @@ export class YoutubeSearchCacheService {
   }
 
   getOrCreate(
+    cacheScope: string,
     keyword: string,
     factory: () => Promise<YoutubeSearchResponse>,
+  ): Promise<YoutubeSearchResponse>;
+  getOrCreate(
+    keyword: string,
+    factory: () => Promise<YoutubeSearchResponse>,
+  ): Promise<YoutubeSearchResponse>;
+  getOrCreate(
+    first: string,
+    second: string | (() => Promise<YoutubeSearchResponse>),
+    third?: () => Promise<YoutubeSearchResponse>,
   ): Promise<YoutubeSearchResponse> {
-    const cacheKey = this.normalizeKeyword(keyword);
-    const cachedResponse = this.get(cacheKey);
+    const cacheScope = third ? first : 'server:default';
+    const keyword = third ? (second as string) : first;
+    const factory = third || (second as () => Promise<YoutubeSearchResponse>);
+    const cachedResponse = this.getCached(cacheScope, keyword);
     if (cachedResponse) {
-      this.logger.debug(`YouTube search cache hit for "${cacheKey}".`);
       return Promise.resolve(cachedResponse);
     }
 
+    const cacheKey = this.getCacheKey(cacheScope, keyword);
     const pendingRequest = this.inFlight.get(cacheKey);
     if (pendingRequest) {
-      this.logger.debug(`Joined in-flight YouTube search for "${cacheKey}".`);
+      this.logger.debug('Joined in-flight YouTube search.');
       return pendingRequest;
     }
 
@@ -54,6 +66,17 @@ export class YoutubeSearchCacheService {
 
     this.inFlight.set(cacheKey, request);
     return request;
+  }
+
+  getCached(
+    cacheScope: string,
+    keyword: string,
+  ): YoutubeSearchResponse | undefined {
+    const cachedResponse = this.get(this.getCacheKey(cacheScope, keyword));
+    if (cachedResponse) {
+      this.logger.debug('YouTube search cache hit.');
+    }
+    return cachedResponse;
   }
 
   private get(cacheKey: string): YoutubeSearchResponse | undefined {
@@ -103,6 +126,10 @@ export class YoutubeSearchCacheService {
 
   private normalizeKeyword(keyword: string): string {
     return keyword.trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  private getCacheKey(cacheScope: string, keyword: string): string {
+    return `${cacheScope}:${this.normalizeKeyword(keyword)}`;
   }
 
   private getPositiveInteger(name: string, fallback: number): number {

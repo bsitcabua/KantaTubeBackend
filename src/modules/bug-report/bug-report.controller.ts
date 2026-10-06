@@ -1,43 +1,49 @@
-import { Controller, Get, Post, Body, UseInterceptors, UploadedFile } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Post,
+  Req,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { memoryStorage } from 'multer';
+import { Request } from 'express';
+import { RateLimiterService } from '../../common/rate-limit/rate-limiter.service';
 import { BugReportService } from './bug-report.service';
-import { BugReport } from './entities/bug-report.entity';
+import { parseBugReportCreateDto } from './bug-report.dto';
+import {
+  BUG_REPORT_MAX_FILE_SIZE_BYTES,
+  bugReportFileFilter,
+  BugReportUpload,
+} from './bug-report.upload';
 
 @Controller('bug-report')
 export class BugReportController {
-    constructor(private readonly bugReportService: BugReportService) {}
-      
-    @Get()
-    findAll(): Promise<BugReport[]> {
-        return this.bugReportService.findAll();
-    }
+  constructor(
+    private readonly bugReportService: BugReportService,
+    private readonly rateLimiter: RateLimiterService,
+  ) {}
 
-    @Post('create')
-    @UseInterceptors(FileInterceptor('screenshot', {
-        storage: diskStorage({
-            destination: (req, file, cb) => {
-                const uploadPath = './uploads/bug-reports';
-                // Automatically create the folder if it doesn't exist
-                if (!existsSync(uploadPath)) {
-                    mkdirSync(uploadPath, { recursive: true });
-                }
-                cb(null, uploadPath);
-            },
-            filename: (req, file, cb) => {
-                // Generate a random 16-character string for the filename
-                const randomName = Array(16).fill(null).map(() => Math.round(Math.random() * 16).toString(16)).join('');
-                cb(null, `${randomName}${extname(file.originalname)}`);
-            }
-        })
-    }))
-    create(
-        @Body() payload: any,
-        @UploadedFile() file: any
-    ): Promise<BugReport> {
-        // Pass both the payload and the uploaded file to the service
-        return this.bugReportService.create(payload, file);
-    }
+  @Post('create')
+  @UseInterceptors(
+    FileInterceptor('screenshot', {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: BUG_REPORT_MAX_FILE_SIZE_BYTES,
+        files: 1,
+        fields: 5,
+        fieldSize: 20_000,
+      },
+      fileFilter: bugReportFileFilter,
+    }),
+  )
+  create(
+    @Body() payload: unknown,
+    @UploadedFile() file: BugReportUpload | undefined,
+    @Req() request: Request,
+  ) {
+    this.rateLimiter.checkBugReport(request.ip || 'unknown');
+    return this.bugReportService.create(parseBugReportCreateDto(payload), file);
+  }
 }

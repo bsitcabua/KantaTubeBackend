@@ -18,12 +18,42 @@ import {
 import { YoutubePersonalKeyService } from './youtube-personal-key.service';
 import { YoutubeSearchCacheService } from './youtube-search-cache.service';
 
+export const YOUTUBE_QUOTA_EXHAUSTED_COOLDOWN_MS = 10 * 60 * 1000;
+
+interface PersonalYoutubeCredential {
+  kind: 'personal';
+  apiKey: string;
+  cacheScope: string;
+}
+
+interface ServerYoutubeCredential {
+  kind: 'server';
+  alias: string;
+  aliases: string[];
+  apiKeys: Record<string, string>;
+  apiKey: string;
+  cacheScope: string;
+}
+
+type ResolvedYoutubeCredential =
+  | PersonalYoutubeCredential
+  | ServerYoutubeCredential;
+
 @Injectable()
 export class YoutubeService {
   private readonly logger = new Logger(YoutubeService.name);
   private readonly youtubeSearchUrl =
     'https://www.googleapis.com/youtube/v3/search';
   private readonly requestTimeoutMs = 10000;
+  private readonly exhaustedServerAliases = new Map<string, number>();
+  private readonly quotaReasons = new Set([
+    'quotaExceeded',
+    'dailyLimitExceeded',
+    'dailyLimitExceededUnreg',
+    'rateLimitExceeded',
+    'userRateLimitExceeded',
+    'RATE_LIMIT_EXCEEDED',
+  ]);
 
   constructor(
     private readonly configService: ConfigService,
@@ -31,7 +61,7 @@ export class YoutubeService {
     private readonly searchCacheService: YoutubeSearchCacheService,
   ) {}
 
-  getKeyAliases(visitorId?: string): YoutubeKeyAliasesResponse {
+  getKeyAliases(userId?: string): YoutubeKeyAliasesResponse {
     const configuredKeys = this.getConfiguredApiKeys();
     const aliases = Object.keys(configuredKeys);
 
@@ -45,14 +75,14 @@ export class YoutubeService {
           : aliases[0];
 
       return {
-        aliases: this.withPersonalAlias(aliases, visitorId),
+        aliases: this.withPersonalAlias(aliases, userId),
         defaultAlias,
       };
     }
 
     if (this.configService.get<string>('YOUTUBE_API_KEY')?.trim()) {
       return {
-        aliases: this.withPersonalAlias(['default'], visitorId),
+        aliases: this.withPersonalAlias(['default'], userId),
         defaultAlias: 'default',
       };
     }
@@ -63,18 +93,222 @@ export class YoutubeService {
   async search(
     searchQuery: string,
     requestedKeyAlias?: string,
-    visitorId?: string,
+    userId?: string,
   ): Promise<YoutubeSearchResponse> {
     const normalizedQuery = this.normalizeQuery(searchQuery);
-    const apiKey = this.resolveApiKey(requestedKeyAlias, visitorId);
+    const credential = this.resolveCredential(requestedKeyAlias, userId);
 
     const effectiveQuery = normalizedQuery.toLowerCase().includes('karaoke')
       ? normalizedQuery
       : `${normalizedQuery} Karaoke`;
 
-    return this.searchCacheService.getOrCreate(effectiveQuery, () =>
-      this.fetchSearch(effectiveQuery, apiKey),
+    if (
+      credential.kind === 'personal' ||
+      !this.isAutomaticServerKeySwitchingEnabled()
+    ) {
+      return this.searchCacheService.getOrCreate(
+        credential.cacheScope,
+        effectiveQuery,
+        () => this.fetchSearch(effectiveQuery, credential.apiKey),
+      );
+    }
+
+    return this.searchWithServerKeyFallback(effectiveQuery, credential);
+  }
+
+  private async searchWithServerKeyFallback(
+    effectiveQuery: string,
+    credential: ServerYoutubeCredential,
+  ): Promise<YoutubeSearchResponse> {
+    this.removeExpiredServerAliasMarkers();
+    const attemptedAliases = new Set<string>();
+    let lastQuotaError: unknown;
+
+    for (const alias of credential.aliases) {
+      if (attemptedAliases.has(alias)) {
+        continue;
+      }
+      attemptedAliases.add(alias);
+
+      const apiKey = credential.apiKeys[alias];
+      if (!apiKey) {
+        continue;
+      }
+
+      const cacheScope = `server:${alias}`;
+      if (this.isServerAliasKnownExhausted(alias)) {
+        const cachedResponse = this.searchCacheService.getCached(
+          cacheScope,
+          effectiveQuery,
+        );
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+
+        this.logger.debug(
+          `Skipping known-exhausted YouTube server alias ${alias}.`,
+        );
+        continue;
+      }
+
+      try {
+        const response = await this.searchCacheService.getOrCreate(
+          cacheScope,
+          effectiveQuery,
+          () => this.fetchSearch(effectiveQuery, apiKey),
+        );
+
+        if (alias !== credential.alias) {
+          this.logger.log(
+            `YouTube search succeeded using fallback server alias ${alias}.`,
+          );
+        }
+        return response;
+      } catch (error: unknown) {
+        if (!this.isQuotaExhaustionError(error)) {
+          throw error;
+        }
+
+        this.markServerAliasExhausted(alias);
+        lastQuotaError = error;
+        this.logger.warn(`YouTube server alias ${alias} quota exhausted.`);
+      }
+    }
+
+    throw lastQuotaError ?? this.createQuotaExceededException();
+  }
+
+  private isAutomaticServerKeySwitchingEnabled(): boolean {
+    const configuredValue = this.configService.get<string | boolean>(
+      'AUTO_SWITCH_KEY',
     );
+    return (
+      configuredValue === true ||
+      (typeof configuredValue === 'string' &&
+        configuredValue.trim().toLowerCase() === 'true')
+    );
+  }
+
+  private isServerAliasKnownExhausted(alias: string): boolean {
+    const exhaustedUntil = this.exhaustedServerAliases.get(alias);
+    if (!exhaustedUntil) {
+      return false;
+    }
+
+    if (exhaustedUntil <= Date.now()) {
+      this.exhaustedServerAliases.delete(alias);
+      return false;
+    }
+
+    return true;
+  }
+
+  private markServerAliasExhausted(alias: string): void {
+    this.exhaustedServerAliases.set(
+      alias,
+      Date.now() + YOUTUBE_QUOTA_EXHAUSTED_COOLDOWN_MS,
+    );
+  }
+
+  private removeExpiredServerAliasMarkers(): void {
+    const now = Date.now();
+    for (const [alias, exhaustedUntil] of this.exhaustedServerAliases) {
+      if (exhaustedUntil <= now) {
+        this.exhaustedServerAliases.delete(alias);
+      }
+    }
+  }
+
+  private isQuotaExhaustionError(error: unknown): boolean {
+    if (!(error instanceof HttpException) || error.getStatus() !== 429) {
+      return false;
+    }
+
+    const response = error.getResponse();
+    return this.isRecord(response) && response['code'] === 'quota_exceeded';
+  }
+
+  private createQuotaExceededException(): HttpException {
+    return new HttpException(
+      {
+        code: 'quota_exceeded',
+        message:
+          'YouTube search quota has been reached. Please try again after the quota resets.',
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+
+  private resolveCredential(
+    requestedAlias?: string,
+    userId?: string,
+  ): ResolvedYoutubeCredential {
+    if (requestedAlias?.trim() === YoutubePersonalKeyService.alias) {
+      if (!userId) {
+        throw new BadRequestException({
+          code: 'personal_key_authentication_required',
+          message: 'Sign in to use a personal YouTube API key.',
+        });
+      }
+      return {
+        kind: 'personal',
+        apiKey: this.personalKeyService.resolve(userId),
+        cacheScope: `personal:${userId}`,
+      };
+    }
+
+    const configuredKeys = this.getConfiguredApiKeys();
+    const aliases = Object.keys(configuredKeys);
+
+    if (aliases.length > 0) {
+      const defaultAlias =
+        this.configService
+          .get<string>('YOUTUBE_DEFAULT_API_KEY_ALIAS')
+          ?.trim() || aliases[0];
+      const selectedAlias = requestedAlias?.trim() || defaultAlias;
+      const selectedKey = configuredKeys[selectedAlias];
+
+      if (!selectedKey) {
+        throw new BadRequestException({
+          code: 'invalid_api_key_alias',
+          message: 'The selected YouTube API key is not available.',
+        });
+      }
+
+      return this.createServerCredential(configuredKeys, selectedAlias);
+    }
+
+    const singleApiKey = this.configService
+      .get<string>('YOUTUBE_API_KEY')
+      ?.trim();
+    if (singleApiKey) {
+      if (requestedAlias?.trim() && requestedAlias.trim() !== 'default') {
+        throw new BadRequestException({
+          code: 'invalid_api_key_alias',
+          message: 'The selected YouTube API key is not available.',
+        });
+      }
+      return this.createServerCredential({ default: singleApiKey }, 'default');
+    }
+
+    this.throwMissingKeyConfiguration();
+  }
+
+  private createServerCredential(
+    apiKeys: Record<string, string>,
+    selectedAlias: string,
+  ): ServerYoutubeCredential {
+    return {
+      kind: 'server',
+      alias: selectedAlias,
+      aliases: [
+        selectedAlias,
+        ...Object.keys(apiKeys).filter((alias) => alias !== selectedAlias),
+      ],
+      apiKeys,
+      apiKey: apiKeys[selectedAlias],
+      cacheScope: `server:${selectedAlias}`,
+    };
   }
 
   private async fetchSearch(
@@ -96,10 +330,13 @@ export class YoutubeService {
     const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
 
     try {
-      const response = await fetch(`${this.youtubeSearchUrl}?${params.toString()}`, {
-        method: 'GET',
-        signal: controller.signal,
-      });
+      const response = await fetch(
+        `${this.youtubeSearchUrl}?${params.toString()}`,
+        {
+          method: 'GET',
+          signal: controller.signal,
+        },
+      );
       const payload: unknown = await response.json();
 
       if (!response.ok) {
@@ -132,9 +369,7 @@ export class YoutubeService {
       }
 
       this.logger.error(
-        `YouTube search.list failed: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
+        'YouTube search.list failed before receiving a response.',
       );
       throw new BadGatewayException({
         code: 'youtube_unavailable',
@@ -165,56 +400,8 @@ export class YoutubeService {
     return normalized;
   }
 
-  private resolveApiKey(
-    requestedAlias?: string,
-    visitorId?: string,
-  ): string {
-    if (requestedAlias?.trim() === YoutubePersonalKeyService.alias) {
-      return this.personalKeyService.resolve(visitorId ?? '');
-    }
-
-    const configuredKeys = this.getConfiguredApiKeys();
-    const aliases = Object.keys(configuredKeys);
-
-    if (aliases.length > 0) {
-      const defaultAlias =
-        this.configService
-          .get<string>('YOUTUBE_DEFAULT_API_KEY_ALIAS')
-          ?.trim() || aliases[0];
-      const selectedAlias = requestedAlias?.trim() || defaultAlias;
-      const selectedKey = configuredKeys[selectedAlias];
-
-      if (!selectedKey) {
-        throw new BadRequestException({
-          code: 'invalid_api_key_alias',
-          message: 'The selected YouTube API key is not available.',
-        });
-      }
-
-      return selectedKey;
-    }
-
-    const singleApiKey = this.configService
-      .get<string>('YOUTUBE_API_KEY')
-      ?.trim();
-    if (singleApiKey) {
-      if (requestedAlias?.trim() && requestedAlias.trim() !== 'default') {
-        throw new BadRequestException({
-          code: 'invalid_api_key_alias',
-          message: 'The selected YouTube API key is not available.',
-        });
-      }
-      return singleApiKey;
-    }
-
-    this.throwMissingKeyConfiguration();
-  }
-
-  private withPersonalAlias(
-    aliases: string[],
-    visitorId?: string,
-  ): string[] {
-    return this.personalKeyService.has(visitorId)
+  private withPersonalAlias(aliases: string[], userId?: string): string[] {
+    return this.personalKeyService.has(userId)
       ? [...aliases, YoutubePersonalKeyService.alias]
       : aliases;
   }
@@ -242,11 +429,9 @@ export class YoutubeService {
         },
         {},
       );
-    } catch (error: unknown) {
+    } catch {
       this.logger.error(
-        `YOUTUBE_API_KEYS is invalid: ${
-          error instanceof Error ? error.message : 'Unknown configuration error'
-        }`,
+        'YOUTUBE_API_KEYS contains invalid JSON configuration.',
       );
       throw new ServiceUnavailableException({
         code: 'youtube_not_configured',
@@ -271,28 +456,17 @@ export class YoutubeService {
       ...(apiError?.errors?.map((item) => item.reason) ?? []),
       ...(apiError?.details?.map((item) => item.reason) ?? []),
     ];
-    const quotaReasons = new Set([
-      'quotaExceeded',
-      'dailyLimitExceeded',
-      'rateLimitExceeded',
-      'userRateLimitExceeded',
-      'RATE_LIMIT_EXCEEDED',
-    ]);
-    const isQuotaExceeded =
-      status === HttpStatus.TOO_MANY_REQUESTS ||
-      apiError?.status === 'RESOURCE_EXHAUSTED' ||
-      reasons.some((reason) => reason && quotaReasons.has(reason));
+    const isQuotaExceeded = this.isQuotaExhaustionResponse(
+      status,
+      apiError,
+      reasons,
+    );
 
     if (isQuotaExceeded) {
-      this.logger.warn('YouTube search quota or upstream rate limit was reached.');
-      throw new HttpException(
-        {
-          code: 'quota_exceeded',
-          message:
-            'YouTube search quota has been reached. Please try again after the quota resets.',
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
+      this.logger.warn(
+        'YouTube search quota or upstream rate limit was reached.',
       );
+      throw this.createQuotaExceededException();
     }
 
     const normalizedReasons = reasons
@@ -378,6 +552,18 @@ export class YoutubeService {
       code: 'youtube_upstream_error',
       message: 'YouTube search failed. Please try again.',
     });
+  }
+
+  private isQuotaExhaustionResponse(
+    status: number,
+    apiError: YoutubeApiError | undefined,
+    reasons: Array<string | undefined>,
+  ): boolean {
+    return (
+      status === HttpStatus.TOO_MANY_REQUESTS ||
+      apiError?.status === 'RESOURCE_EXHAUSTED' ||
+      reasons.some((reason) => reason && this.quotaReasons.has(reason))
+    );
   }
 
   private getYoutubeApiError(payload: unknown): YoutubeApiError | undefined {

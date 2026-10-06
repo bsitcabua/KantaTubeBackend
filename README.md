@@ -33,6 +33,37 @@ npm install
 npm run migration:run
 ```
 
+## YouTube server-key fallback
+
+Configure server keys as a JSON alias map and select the normal starting alias:
+
+```dotenv
+YOUTUBE_API_KEYS={"primary":"KEY_A","backup1":"KEY_B"}
+YOUTUBE_DEFAULT_API_KEY_ALIAS=primary
+AUTO_SWITCH_KEY=false
+```
+
+`AUTO_SWITCH_KEY` is parsed explicitly and defaults to `false`; invalid values
+also disable fallback. When enabled, a confirmed quota error tries the selected
+server alias first, followed by the remaining aliases in configuration order.
+Personal keys never enter this fallback path. A quota-exhausted alias is
+tracked by alias only and skipped for 10 minutes in the current backend
+process. This state is intentionally process-local and is not shared between
+horizontally scaled instances.
+
+## Reserved-song queue limit
+
+Set `MAX_KARAOKE_QUEUE_SIZE` to a positive integer; it defaults safely to `15`
+when missing or invalid. The public `/api/config/public` endpoint exposes only
+the numeric limit needed by the browser.
+
+The limit is calculated from the main browser's existing `reserved` list:
+`queueCount = reserved.length`. That list includes the currently playing song
+when it is present at index `0`; historical songs and database records are not
+counted. Search, suggestions, and reservation actions are blocked when
+`queueCount >= MAX_KARAOKE_QUEUE_SIZE`, and the final reservation check runs
+immediately before queue mutation.
+
 ## Compile and run the project
 
 ```bash
