@@ -8,7 +8,11 @@ describe('SearchGateway', () => {
   let gateway: SearchGateway;
   let sockets: Map<string, Socket>;
   let roomEmit: jest.Mock;
-  let auth: { authenticate: jest.Mock; cookieName: string };
+  let auth: {
+    authenticate: jest.Mock;
+    authenticateSocketTicket: jest.Mock;
+    cookieName: string;
+  };
   let authorization: {
     findActiveSession: jest.Mock;
     authorizeGuestHost: jest.Mock;
@@ -26,6 +30,7 @@ describe('SearchGateway', () => {
     roomEmit = jest.fn();
     auth = {
       authenticate: jest.fn().mockResolvedValue({ id: 'owner-id' }),
+      authenticateSocketTicket: jest.fn().mockResolvedValue({ id: 'owner-id' }),
       cookieName: 'kantatube_session',
     };
     authorization = {
@@ -91,6 +96,18 @@ describe('SearchGateway', () => {
     );
     expect(main.join).toHaveBeenCalledWith(`karaoke:karaoke:${sessionId}`);
     expect(main.handshake.auth).not.toHaveProperty('role');
+  });
+
+  it('authenticates a cross-origin main client with a short-lived socket ticket', async () => {
+    const main = createClient({ sessionId, socketTicket: 'v1.ticket.signature' }, 'ticket-main-socket');
+    (main.handshake.headers as { cookie?: string }).cookie = undefined;
+
+    await gateway.handleConnection(main);
+
+    expect(auth.authenticateSocketTicket).toHaveBeenCalledWith('v1.ticket.signature');
+    expect(auth.authenticate).not.toHaveBeenCalled();
+    expect(authorization.findActiveSession).toHaveBeenCalledWith('owner-id', sessionId);
+    expect(main.join).toHaveBeenCalledWith(`karaoke:karaoke:${sessionId}`);
   });
 
   it('accepts an anonymous main host capability without a login cookie', async () => {
