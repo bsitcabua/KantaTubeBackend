@@ -153,6 +153,58 @@ describe('SearchGateway', () => {
     expect(main.emit).not.toHaveBeenCalledWith('onSearch', expect.anything());
   });
 
+  it('keeps different remote devices connected and replaces only the same device', async () => {
+    const deviceB = '123e4567-e89b-42d3-a456-426614174003';
+    authorization.createPendingRemote.mockImplementation(
+      async (_pairingToken: string, requestedDeviceId: string) => ({
+        sessionId,
+        sessionKind: 'karaoke',
+        grant: {
+          id: `grant-${requestedDeviceId.slice(-1)}`,
+          deviceId: requestedDeviceId,
+        },
+      }),
+    );
+    const remoteA = createClient(
+      {
+        pairingToken: 'pairing-token-value-123456789012345678901234567890',
+        deviceId,
+      },
+      'remote-a',
+    );
+    const remoteB = createClient(
+      {
+        pairingToken: 'pairing-token-value-123456789012345678901234567890',
+        deviceId: deviceB,
+      },
+      'remote-b',
+    );
+
+    await gateway.handleConnection(remoteA);
+    await gateway.handleConnection(remoteB);
+
+    expect(remoteA.disconnect).not.toHaveBeenCalled();
+    expect(remoteB.disconnect).not.toHaveBeenCalled();
+
+    const replacement = createClient(
+      {
+        pairingToken: 'pairing-token-value-123456789012345678901234567890',
+        deviceId,
+      },
+      'remote-a-replacement',
+    );
+    await gateway.handleConnection(replacement);
+
+    expect(remoteA.emit).toHaveBeenCalledWith(
+      'remoteConnectionRevoked',
+      expect.objectContaining({
+        message: expect.stringContaining('another tab'),
+      }),
+    );
+    expect(remoteA.disconnect).toHaveBeenCalledWith(true);
+    expect(remoteB.disconnect).not.toHaveBeenCalled();
+  });
+
   it('forwards a validated command only after approval and grant revalidation', async () => {
     const main = createClient({ sessionId }, 'main-socket');
     const remote = createClient(
@@ -268,5 +320,4 @@ describe('SearchGateway', () => {
       error: { code: 'MAIN_CLIENT_OFFLINE' },
     });
   });
-
 });

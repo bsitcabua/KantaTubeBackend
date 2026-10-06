@@ -498,11 +498,16 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     pairingToken: string,
     deviceId: string,
   ): Promise<void> {
-    this.disconnectDuplicateRemote(client, deviceId);
     const pending = await this.authorization().createPendingRemote(
       pairingToken,
       deviceId,
       this.deviceLabel(client),
+    );
+    this.disconnectDuplicateRemote(
+      client,
+      deviceId,
+      pending.sessionId,
+      pending.sessionKind,
     );
     client.data.kantaTube = {
       kind: 'remote',

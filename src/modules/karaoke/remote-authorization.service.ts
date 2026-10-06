@@ -243,7 +243,6 @@ export class RemoteAuthorizationService {
     grant.approvedAt = now;
     grant.expiresAt = new Date(now.getTime() + this.grantLifetimeMs);
     await this.grants.save(grant);
-    await this.consumePairings(sessionId, sessionKind, now);
     this.logger.log(
       `Remote ${this.safeId(grant.id)} approved for session ${this.safeId(sessionId)}`,
     );
@@ -404,14 +403,15 @@ export class RemoteAuthorizationService {
         { ...scope, status: KaraokeRemoteGrantStatus.APPROVED },
       ],
     });
-    if (active.length === 0) return [];
     const now = new Date();
-    for (const grant of active) {
-      grant.status = KaraokeRemoteGrantStatus.REVOKED;
-      grant.revokedAt = now;
+    if (active.length > 0) {
+      for (const grant of active) {
+        grant.status = KaraokeRemoteGrantStatus.REVOKED;
+        grant.revokedAt = now;
+      }
+      await this.grants.save(active);
     }
-    await this.grants.save(active);
-    await this.consumePairings(sessionId, sessionKind, now);
+    await this.invalidatePairingInvitations(sessionId, sessionKind, now);
     this.logger.log(
       `Remote access revoked for session ${this.safeId(sessionId)}`,
     );
@@ -437,7 +437,7 @@ export class RemoteAuthorizationService {
         ],
       })
       .execute();
-    await this.consumePairings(sessionId, sessionKind, now);
+    await this.invalidatePairingInvitations(sessionId, sessionKind, now);
     for (const listener of this.sessionInvalidationListeners)
       listener(sessionId, sessionKind);
   }
@@ -472,7 +472,9 @@ export class RemoteAuthorizationService {
     sessionId: string,
     now = new Date(),
   ): Promise<PairingInvitation> {
-    await this.consumePairings(sessionId, sessionKind, now);
+    // Explicit QR rotation invalidates the previous invitation, while approval
+    // of one device deliberately leaves the current invitation usable by others.
+    await this.invalidatePairingInvitations(sessionId, sessionKind, now);
     const token = randomBytes(32).toString('base64url');
     const record = this.pairingSessions.create({
       karaokeSessionId: sessionKind === 'karaoke' ? sessionId : null,
@@ -485,7 +487,12 @@ export class RemoteAuthorizationService {
     return { token, sessionId, expiresAt: saved.expiresAt };
   }
 
-  private async consumePairings(
+  /**
+   * Invalidate the invitation for a session-wide event only. This is not part
+   * of approving or rejecting an individual remote request because one QR may
+   * authorize multiple devices during its valid window.
+   */
+  private async invalidatePairingInvitations(
     sessionId: string,
     sessionKind: RemoteSessionKind,
     consumedAt: Date,

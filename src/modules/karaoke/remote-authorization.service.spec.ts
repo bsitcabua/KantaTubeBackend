@@ -200,7 +200,7 @@ describe('RemoteAuthorizationService', () => {
     });
   });
 
-  it('creates a pending grant, approves it with a one-time grant token, and consumes invitations', async () => {
+  it('creates a pending grant and approves it without consuming the shared invitation', async () => {
     const { service, pairingSessions, grants } = createService();
     const pairing = {
       karaokeSessionId: sessionId,
@@ -221,10 +221,10 @@ describe('RemoteAuthorizationService', () => {
     expect(approved.grant.status).toBe(KaraokeRemoteGrantStatus.APPROVED);
     expect(approved.grant.grantTokenHash).toMatch(/^[a-f0-9]{64}$/);
     expect(approved.grantToken).not.toBe(approved.grant.grantTokenHash);
-    expect(pairingSessions.update).toHaveBeenCalledTimes(1);
+    expect(pairingSessions.update).not.toHaveBeenCalled();
   });
 
-  it('does not consume a pairing invitation until approval', async () => {
+  it('allows multiple pending devices to use the same pairing invitation', async () => {
     const { service, pairingSessions, grants } = createService();
     const pairing = {
       karaokeSessionId: sessionId,
@@ -250,7 +250,7 @@ describe('RemoteAuthorizationService', () => {
     expect(pairingSessions.update).not.toHaveBeenCalled();
   });
 
-  it('rejects a consumed pairing invitation on reuse after approval', async () => {
+  it('allows another device to use the same invitation after one device is approved', async () => {
     const { service, pairingSessions, grants } = createService();
     const pairing = {
       karaokeSessionId: sessionId,
@@ -264,22 +264,133 @@ describe('RemoteAuthorizationService', () => {
       deviceId,
       status: KaraokeRemoteGrantStatus.PENDING,
     } as KaraokeRemoteGrant;
-    grants.findOne = jest.fn().mockResolvedValue(pendingGrant);
+    grants.findOne = jest
+      .fn()
+      .mockResolvedValueOnce(pendingGrant)
+      .mockResolvedValueOnce(undefined);
     await service.approveRemote(sessionId, pendingGrant.id);
 
-    pairingSessions.findOne = jest
-      .fn()
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ ...pairing, consumedAt: new Date() });
+    pairingSessions.findOne = jest.fn().mockResolvedValue(pairing);
+    const secondPending = await service.createPendingRemote(
+      'pairing-token-value-123456789012345678901234567890',
+      '123e4567-e89b-42d3-a456-426614174003',
+      'Tablet',
+    );
+
+    expect(secondPending.grant.status).toBe(KaraokeRemoteGrantStatus.PENDING);
+    expect(pairingSessions.update).not.toHaveBeenCalled();
+  });
+
+  it('approves multiple distinct remotes from one QR with independent grants', async () => {
+    const { service, pairingSessions, grants } = createService();
+    const pairing = {
+      karaokeSessionId: sessionId,
+      remoteHostSessionId: null,
+      consumedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    const deviceA = deviceId;
+    const deviceB = '123e4567-e89b-42d3-a456-426614174003';
+    const grantsById = new Map<string, KaraokeRemoteGrant>();
+    const grantsByDevice = new Map<string, KaraokeRemoteGrant>();
+    let nextGrant = 0;
+
+    pairingSessions.findOne = jest.fn().mockResolvedValue(pairing);
+    grants.create = jest.fn((value) => {
+      const grant = {
+        ...value,
+        id: `grant-${++nextGrant}`,
+      } as KaraokeRemoteGrant;
+      grantsByDevice.set(grant.deviceId, grant);
+      return grant;
+    }) as never;
+    grants.save = jest.fn(async (value) => {
+      const grant = value as KaraokeRemoteGrant;
+      grantsById.set(grant.id, grant);
+      grantsByDevice.set(grant.deviceId, grant);
+      return grant;
+    }) as never;
+    grants.findOne = jest.fn(
+      async ({
+        where,
+      }: {
+        where: Record<string, unknown> | Record<string, unknown>[];
+      }) => {
+        const scopes = Array.isArray(where) ? where : [where];
+        for (const scope of scopes) {
+          if (typeof scope.id === 'string') {
+            const byId = grantsById.get(scope.id);
+            if (byId) return byId;
+          }
+          if (typeof scope.deviceId === 'string') {
+            const byDevice = grantsByDevice.get(scope.deviceId);
+            if (byDevice && byDevice.status === scope.status) return byDevice;
+          }
+        }
+        return undefined;
+      },
+    ) as never;
+
+    const pendingA = await service.createPendingRemote(
+      'pairing-token-value-123456789012345678901234567890',
+      deviceA,
+      'Phone A',
+    );
+    const approvedA = await service.approveRemote(sessionId, pendingA.grant.id);
+    const pendingB = await service.createPendingRemote(
+      'pairing-token-value-123456789012345678901234567890',
+      deviceB,
+      'Phone B',
+    );
+    const approvedB = await service.approveRemote(sessionId, pendingB.grant.id);
+
+    expect(approvedA.grant.status).toBe(KaraokeRemoteGrantStatus.APPROVED);
+    expect(approvedB.grant.status).toBe(KaraokeRemoteGrantStatus.APPROVED);
+    expect(approvedA.grant.id).not.toBe(approvedB.grant.id);
+    expect(approvedA.grant.deviceId).toBe(deviceA);
+    expect(approvedB.grant.deviceId).toBe(deviceB);
+    expect(pairingSessions.update).not.toHaveBeenCalled();
     await expect(
-      service.createPendingRemote(
-        'pairing-token-value-123456789012345678901234567890',
+      service.authorizeGrant(sessionId, deviceA, approvedA.grantToken),
+    ).resolves.toBe(approvedA.grant);
+    await expect(
+      service.authorizeGrant(sessionId, deviceB, approvedB.grantToken),
+    ).resolves.toBe(approvedB.grant);
+  });
+
+  it('keeps the invitation available after rejecting one pending remote', async () => {
+    const { service, pairingSessions, grants } = createService();
+    const pairing = {
+      karaokeSessionId: sessionId,
+      remoteHostSessionId: null,
+      consumedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    pairingSessions.findOne = jest.fn().mockResolvedValue(pairing);
+    grants.findOne = jest
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({
+        id: 'grant-id',
         deviceId,
-        'Phone',
-      ),
-    ).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'PAIR_TOKEN_EXPIRED' }),
-    });
+        status: KaraokeRemoteGrantStatus.PENDING,
+      })
+      .mockResolvedValueOnce(undefined);
+
+    await service.createPendingRemote(
+      'pairing-token-value-123456789012345678901234567890',
+      deviceId,
+      'Phone A',
+    );
+    await service.rejectRemote(sessionId, 'grant-id');
+    const nextPending = await service.createPendingRemote(
+      'pairing-token-value-123456789012345678901234567890',
+      '123e4567-e89b-42d3-a456-426614174003',
+      'Phone B',
+    );
+
+    expect(nextPending.grant.status).toBe(KaraokeRemoteGrantStatus.PENDING);
+    expect(pairingSessions.update).not.toHaveBeenCalled();
   });
 
   it('rejects an expired grant during authorization and marks it expired', async () => {
@@ -365,10 +476,9 @@ describe('RemoteAuthorizationService', () => {
       'karaokeSessionId = :sessionId',
       { sessionId },
     );
-    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
-      'status = :status',
-      { status: KaraokeRemoteGrantStatus.APPROVED },
-    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('status = :status', {
+      status: KaraokeRemoteGrantStatus.APPROVED,
+    });
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
@@ -392,13 +502,15 @@ describe('RemoteAuthorizationService', () => {
         return queryBuilder;
       }),
       where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn((query: string, params: { now?: Date; renewalThreshold?: Date }) => {
-        if (query === 'expiresAt > :now') now = params.now;
-        if (query === 'expiresAt <= :renewalThreshold') {
-          renewalThreshold = params.renewalThreshold;
-        }
-        return queryBuilder;
-      }),
+      andWhere: jest.fn(
+        (query: string, params: { now?: Date; renewalThreshold?: Date }) => {
+          if (query === 'expiresAt > :now') now = params.now;
+          if (query === 'expiresAt <= :renewalThreshold') {
+            renewalThreshold = params.renewalThreshold;
+          }
+          return queryBuilder;
+        },
+      ),
       execute: jest.fn(async () => {
         if (
           now &&
@@ -415,11 +527,15 @@ describe('RemoteAuthorizationService', () => {
     grants.createQueryBuilder = jest.fn(() => queryBuilder) as never;
 
     try {
-      await expect(service.renewActiveGrantsForSession(sessionId)).resolves.toBe(1);
+      await expect(
+        service.renewActiveGrantsForSession(sessionId),
+      ).resolves.toBe(1);
       expect(currentExpiry).toEqual(new Date('2026-01-01T01:00:00.000Z'));
 
       jest.advanceTimersByTime(31 * 60 * 1000);
-      await expect(service.renewActiveGrantsForSession(sessionId)).resolves.toBe(1);
+      await expect(
+        service.renewActiveGrantsForSession(sessionId),
+      ).resolves.toBe(1);
       expect(currentExpiry).toEqual(new Date('2026-01-01T01:31:00.000Z'));
     } finally {
       jest.useRealTimers();
@@ -451,11 +567,13 @@ describe('RemoteAuthorizationService', () => {
       revokedAt: null,
     } as KaraokeRemoteGrant;
     grants.find = jest.fn().mockResolvedValue([activeGrant]);
-    grants.findOne = jest.fn().mockImplementation(async () =>
-      activeGrant.status === KaraokeRemoteGrantStatus.APPROVED
-        ? activeGrant
-        : null,
-    );
+    grants.findOne = jest
+      .fn()
+      .mockImplementation(async () =>
+        activeGrant.status === KaraokeRemoteGrantStatus.APPROVED
+          ? activeGrant
+          : null,
+      );
 
     await service.revokeAll(sessionId);
 
@@ -467,6 +585,21 @@ describe('RemoteAuthorizationService', () => {
     });
   });
 
+  it('invalidates the active QR when revoking all access even without grants', async () => {
+    const { service, pairingSessions, grants } = createService();
+
+    await service.revokeAll(sessionId);
+
+    expect(grants.find).toHaveBeenCalled();
+    expect(pairingSessions.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        karaokeSessionId: sessionId,
+        consumedAt: expect.anything(),
+      }),
+      { consumedAt: expect.any(Date) },
+    );
+  });
+
   it('invalidates session grants and notifies the gateway listener', async () => {
     const { service, grants, pairingSessions } = createService();
     const activeGrant = {
@@ -475,11 +608,13 @@ describe('RemoteAuthorizationService', () => {
       status: KaraokeRemoteGrantStatus.APPROVED,
       expiresAt: new Date(Date.now() + 60_000),
     } as KaraokeRemoteGrant;
-    grants.findOne = jest.fn().mockImplementation(async () =>
-      activeGrant.status === KaraokeRemoteGrantStatus.APPROVED
-        ? activeGrant
-        : null,
-    );
+    grants.findOne = jest
+      .fn()
+      .mockImplementation(async () =>
+        activeGrant.status === KaraokeRemoteGrantStatus.APPROVED
+          ? activeGrant
+          : null,
+      );
     grants.createQueryBuilder = jest.fn(() => ({
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
