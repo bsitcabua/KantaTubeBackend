@@ -108,10 +108,25 @@ describe('SearchGateway', () => {
 
     await gateway.handleConnection(main);
 
-    expect(auth.authenticateSocketTicket).toHaveBeenCalledWith('v1.ticket.signature');
+    expect(auth.authenticateSocketTicket).toHaveBeenCalledWith('v1.ticket.signature', sessionId);
     expect(auth.authenticate).not.toHaveBeenCalled();
     expect(authorization.findActiveSession).toHaveBeenCalledWith('owner-id', sessionId);
     expect(main.join).toHaveBeenCalledWith(`karaoke:karaoke:${sessionId}`);
+  });
+
+  it('reports a rejected session-bound ticket without querying the karaoke session', async () => {
+    auth.authenticateSocketTicket.mockResolvedValue(null);
+    const main = createClient({ sessionId, socketTicket: 'expired-or-mismatched-ticket' }, 'ticket-main-socket');
+    (main.handshake.headers as { cookie?: string }).cookie = undefined;
+
+    await gateway.handleConnection(main);
+
+    expect(main.emit).toHaveBeenCalledWith(
+      'socketError',
+      expect.objectContaining({ code: 'SOCKET_TICKET_REJECTED' }),
+    );
+    expect(authorization.findActiveSession).not.toHaveBeenCalled();
+    expect(main.disconnect).toHaveBeenCalledWith(true);
   });
 
   it('accepts an anonymous main host capability without a login cookie', async () => {
