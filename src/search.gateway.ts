@@ -83,9 +83,10 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   async handleConnection(client: Socket): Promise<void> {
+    let sessionId = '';
     try {
       const auth = this.handshakeAuth(client);
-      const sessionId = this.stringValue(auth.sessionId, 64);
+      sessionId = this.stringValue(auth.sessionId, 64);
       const deviceId = this.stringValue(auth.deviceId, 36);
       const pairingToken = this.stringValue(auth.pairingToken, 256);
       const grantToken = this.stringValue(auth.grantToken, 256);
@@ -122,7 +123,9 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await this.connectMain(client, sessionId, socketTicket);
     } catch (error) {
       const socketError = this.errorPayload(error);
-      this.logger.warn(`Rejected socket connection: ${socketError.code}`);
+      this.logger.warn(
+        `Rejected socket connection: ${socketError.code} for session ${this.redactSessionId(sessionId)}`,
+      );
       client.emit('socketError', socketError);
       client.disconnect(true);
     }
@@ -440,8 +443,13 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ): Promise<void> {
     const auth = this.authService();
     const user = socketTicket
-      ? await auth.authenticateSocketTicket(socketTicket)
+      ? await auth.authenticateSocketTicket(socketTicket, sessionId)
       : await auth.authenticate(this.readCookie(client, auth.cookieName));
+    if (socketTicket && !user)
+      throw this.socketException(
+        'SOCKET_TICKET_REJECTED',
+        'The socket ticket is invalid, expired, or belongs to another karaoke session.',
+      );
     if (!user || !sessionId)
       throw this.socketException(
         'SESSION_NOT_FOUND',
@@ -474,6 +482,9 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       sessionId,
       sessionKind: 'karaoke',
     });
+    this.logger.log(
+      `Authenticated main socket registered for session ${this.redactSessionId(sessionId)} using ${socketTicket ? 'ticket' : 'cookie'} auth`,
+    );
   }
 
   private async connectGuestMain(
@@ -978,6 +989,10 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
   }
 
+  private redactSessionId(sessionId: string): string {
+    return sessionId ? `${sessionId.slice(0, 8)}…` : 'none';
+  }
+
   private fail(
     client: Socket,
     code: SocketErrorCode,
@@ -1043,6 +1058,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       'REMOTE_NOT_AUTHORIZED',
       'SESSION_NOT_FOUND',
       'SESSION_EXPIRED',
+      'SOCKET_TICKET_REJECTED',
       'INVALID_PAYLOAD',
       'RATE_LIMITED',
       'MAIN_CLIENT_OFFLINE',

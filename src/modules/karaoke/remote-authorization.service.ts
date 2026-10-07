@@ -456,7 +456,11 @@ export class RemoteAuthorizationService {
     const session = await this.sessions.findOne({
       where: { id: sessionId, ownerId },
     });
-    if (!session) throw new NotFoundException('Karaoke session not found.');
+    if (!session)
+      throw new NotFoundException({
+        code: 'SESSION_NOT_FOUND',
+        message: 'Karaoke session not found.',
+      });
     return this.assertActiveSession(session);
   }
 
