@@ -178,7 +178,7 @@ describe('AuthService', () => {
     ).resolves.toBeNull();
   });
 
-  it('issues and validates a socket ticket without exposing the application session token', async () => {
+  it('issues a session-bound socket ticket without exposing the application session token', async () => {
     const rawToken = 'application-session-token';
     const context = setup();
     const session = {
@@ -191,9 +191,17 @@ describe('AuthService', () => {
     };
     context.sessions.findOne.mockResolvedValue(session);
 
-    const issued = await context.service.issueSocketTicket(rawToken);
+    const issued = await context.service.issueSocketTicket(
+      rawToken,
+      'karaoke-session-a',
+    );
     expect(issued.ticket).not.toContain(rawToken);
-    await expect(context.service.authenticateSocketTicket(issued.ticket)).resolves.toEqual(session.user);
+    await expect(
+      context.service.authenticateSocketTicket(issued.ticket, 'karaoke-session-a'),
+    ).resolves.toEqual(session.user);
+    await expect(
+      context.service.authenticateSocketTicket(issued.ticket, 'karaoke-session-b'),
+    ).resolves.toBeNull();
   });
 
   it('rejects reusing the current password during a password reset', async () => {

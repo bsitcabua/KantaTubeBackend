@@ -738,7 +738,10 @@ export class AuthService {
     return session.user;
   }
 
-  async issueSocketTicket(rawToken?: string): Promise<{ ticket: string; expiresAt: Date }> {
+  async issueSocketTicket(
+    rawToken?: string,
+    karaokeSessionId?: string,
+  ): Promise<{ ticket: string; expiresAt: Date }> {
     if (!rawToken) throw new UnauthorizedException();
     const session = await this.sessions.findOne({
       where: {
@@ -752,10 +755,18 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
-    return createSocketTicket(session.id, session.userId, session.tokenHash);
+    return createSocketTicket(
+      session.id,
+      session.userId,
+      session.tokenHash,
+      karaokeSessionId,
+    );
   }
 
-  async authenticateSocketTicket(rawTicket?: string): Promise<User | null> {
+  async authenticateSocketTicket(
+    rawTicket?: string,
+    expectedKaraokeSessionId?: string,
+  ): Promise<User | null> {
     if (typeof rawTicket !== 'string' || !rawTicket.trim()) return null;
 
     const parts = rawTicket.split('.');
@@ -783,7 +794,16 @@ export class AuthService {
     if (session.revokedAt || session.expiresAt.getTime() <= Date.now()) return null;
 
     const verified = verifySocketTicket(rawTicket, session.tokenHash);
-    if (!verified || verified.authSessionId !== session.id || verified.userId !== session.userId) return null;
+    if (
+      !verified ||
+      verified.authSessionId !== session.id ||
+      verified.userId !== session.userId ||
+      (expectedKaraokeSessionId &&
+        verified.karaokeSessionId !== undefined &&
+        verified.karaokeSessionId !== expectedKaraokeSessionId)
+    ) {
+      return null;
+    }
     return session.user;
   }
 
