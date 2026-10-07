@@ -6,12 +6,14 @@ interface SocketTicketClaims {
   version: 1;
   authSessionId: string;
   userId: string;
+  karaokeSessionId?: string;
   expiresAt: number;
 }
 
 export interface VerifiedSocketTicket {
   authSessionId: string;
   userId: string;
+  karaokeSessionId?: string;
   expiresAt: number;
 }
 
@@ -35,6 +37,7 @@ export function createSocketTicket(
   authSessionId: string,
   userId: string,
   tokenHash: string,
+  karaokeSessionId?: string,
   now = Date.now(),
 ): { ticket: string; expiresAt: Date } {
   const expiresAt = now + SOCKET_TICKET_TTL_MS;
@@ -42,6 +45,7 @@ export function createSocketTicket(
     version: 1,
     authSessionId,
     userId,
+    ...(karaokeSessionId ? { karaokeSessionId } : {}),
     expiresAt,
   };
   const encodedClaims = encode(JSON.stringify(claims));
@@ -86,6 +90,10 @@ export function verifySocketTicket(
       claims.version !== 1 ||
       typeof claims.authSessionId !== 'string' ||
       typeof claims.userId !== 'string' ||
+      (claims.karaokeSessionId !== undefined &&
+        (typeof claims.karaokeSessionId !== 'string' ||
+          !claims.karaokeSessionId.trim() ||
+          claims.karaokeSessionId.length > 64)) ||
       !Number.isSafeInteger(claims.expiresAt) ||
       claims.expiresAt <= now
     ) {
@@ -95,6 +103,9 @@ export function verifySocketTicket(
     return {
       authSessionId: claims.authSessionId,
       userId: claims.userId,
+      ...(claims.karaokeSessionId
+        ? { karaokeSessionId: claims.karaokeSessionId }
+        : {}),
       expiresAt: claims.expiresAt,
     };
   } catch {

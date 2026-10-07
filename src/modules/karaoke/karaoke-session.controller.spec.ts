@@ -1,4 +1,5 @@
 import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { AuthService } from '../auth/auth.service';
 import { OriginGuard } from '../auth/guards/origin.guard';
 import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
 import { User } from '../users/entities/user.entity';
@@ -10,7 +11,8 @@ describe('KaraokeSessionController', () => {
   const sessionId = '123e4567-e89b-42d3-a456-426614174001';
 
   function createController(remoteAuthorization?: {
-    renewActiveGrantsForSession: jest.Mock;
+    renewActiveGrantsForSession?: jest.Mock;
+    findActiveSession?: jest.Mock;
   }) {
     const service = {
       create: jest.fn(),
@@ -19,12 +21,18 @@ describe('KaraokeSessionController', () => {
       heartbeat: jest.fn(),
       end: jest.fn(),
     } as unknown as KaraokeSessionService;
+    const auth = {
+      cookieName: 'kantatube_session',
+      issueSocketTicket: jest.fn(),
+    } as unknown as jest.Mocked<AuthService>;
     return {
       controller: new KaraokeSessionController(
         service,
+        auth,
         remoteAuthorization as never,
       ),
       service: service as jest.Mocked<KaraokeSessionService>,
+      auth,
     };
   }
 
@@ -74,6 +82,32 @@ describe('KaraokeSessionController', () => {
     expect(
       remoteAuthorization.renewActiveGrantsForSession,
     ).toHaveBeenCalledWith(sessionId);
+  });
+
+  it('issues a ticket only after it verifies the owned active karaoke session', async () => {
+    const remoteAuthorization = {
+      findActiveSession: jest.fn().mockResolvedValue({ id: sessionId }),
+    };
+    const { controller, auth } = createController(remoteAuthorization);
+    const expiresAt = new Date(Date.now() + 60_000);
+    auth.issueSocketTicket.mockResolvedValue({
+      ticket: 'session-bound-ticket',
+      expiresAt,
+    });
+
+    const result = await controller.socketTicket(user, sessionId, {
+      headers: { cookie: 'other=value; kantatube_session=raw%20session%20token' },
+    } as never);
+
+    expect(remoteAuthorization.findActiveSession).toHaveBeenCalledWith(
+      user.id,
+      sessionId,
+    );
+    expect(auth.issueSocketTicket).toHaveBeenCalledWith(
+      'raw session token',
+      sessionId,
+    );
+    expect(result).toEqual({ ticket: 'session-bound-ticket', expiresAt });
   });
 
   it('does not renew grants when the heartbeat fails', async () => {
