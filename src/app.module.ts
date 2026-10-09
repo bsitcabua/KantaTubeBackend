@@ -11,6 +11,7 @@ import { getDatabaseOptions } from './database/database.config';
 import { KaraokeModule } from './modules/karaoke/karaoke.module';
 import { RateLimiterModule } from './common/rate-limit/rate-limiter.module';
 import { PublicConfigController } from './config/public-config.controller';
+import { SongbookModule } from './modules/songbook/songbook.module';
 
 @Module({
   controllers: [PublicConfigController],
@@ -26,6 +27,7 @@ import { PublicConfigController } from './config/public-config.controller';
     YoutubeModule,
     AuthModule,
     KaraokeModule,
+    SongbookModule,
     RateLimiterModule,
   ],
 })
