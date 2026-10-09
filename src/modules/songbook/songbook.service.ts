@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { KaraokeSong } from '../karaoke/entities/karaoke-song.entity';
 import { SongbookSearchRequest } from './songbook.dto';
+import { SongbookSearchCacheService } from './songbook-search-cache.service';
 import {
   SongbookFiltersResponse,
   SongbookArtistBrowseResponse,
@@ -16,9 +17,14 @@ export class SongbookService {
   constructor(
     @InjectRepository(KaraokeSong)
     private readonly songs: Repository<KaraokeSong>,
+    private readonly searchCache: SongbookSearchCacheService,
   ) {}
 
   async search(request: SongbookSearchRequest): Promise<SongbookSearchResponse> {
+    return this.searchCache.getOrCreateSearch(request, () => this.searchUncached(request)) as Promise<SongbookSearchResponse>;
+  }
+
+  private async searchUncached(request: SongbookSearchRequest): Promise<SongbookSearchResponse> {
     const queryBuilder = this.createSongQuery();
     this.applyFilters(queryBuilder, request);
 
@@ -76,6 +82,10 @@ export class SongbookService {
   }
 
   async browseArtists(request: SongbookSearchRequest): Promise<SongbookArtistBrowseResponse> {
+    return this.searchCache.getOrCreateSearch(request, () => this.browseArtistsUncached(request)) as Promise<SongbookArtistBrowseResponse>;
+  }
+
+  private async browseArtistsUncached(request: SongbookSearchRequest): Promise<SongbookArtistBrowseResponse> {
     const queryBuilder = this.songs
       .createQueryBuilder('song')
       .select('song.artist', 'artist')
@@ -134,12 +144,14 @@ export class SongbookService {
   }
 
   async filters(): Promise<SongbookFiltersResponse> {
-    const [languages, categories] = await Promise.all([
-      this.getDistinctValues('language'),
-      this.getDistinctValues('category'),
-    ]);
+    return this.searchCache.getOrCreateFilters(async () => {
+      const [languages, categories] = await Promise.all([
+        this.getDistinctValues('language'),
+        this.getDistinctValues('category'),
+      ]);
 
-    return { languages, categories };
+      return { languages, categories };
+    });
   }
 
   private async getDistinctValues(

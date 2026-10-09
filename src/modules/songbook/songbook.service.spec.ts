@@ -1,8 +1,16 @@
 import { NotFoundException } from '@nestjs/common';
 import { KaraokeSong } from '../karaoke/entities/karaoke-song.entity';
+import { SongbookSearchCacheService } from './songbook-search-cache.service';
 import { SongbookService } from './songbook.service';
 
 describe('SongbookService', () => {
+  function createSearchCache() {
+    return {
+      getOrCreateSearch: jest.fn((_request: unknown, factory: () => Promise<unknown>) => factory()),
+      getOrCreateFilters: jest.fn((factory: () => Promise<unknown>) => factory()),
+    } as unknown as SongbookSearchCacheService;
+  }
+
   function createQueryBuilder(result: unknown) {
     const builder = {
       select: jest.fn().mockReturnThis(),
@@ -40,7 +48,7 @@ describe('SongbookService', () => {
     });
     const builder = createQueryBuilder([[song], 1]);
     const repository = { createQueryBuilder: jest.fn().mockReturnValue(builder) } as never;
-    const service = new SongbookService(repository);
+    const service = new SongbookService(repository, createSearchCache());
 
     await expect(service.search({ query: '214', page: 1, limit: 20 })).resolves.toEqual({
       data: [{
@@ -76,7 +84,7 @@ describe('SongbookService', () => {
         .mockReturnValueOnce(filteredCountBuilder)
         .mockReturnValueOnce(catalogCountBuilder),
     } as never;
-    const service = new SongbookService(repository);
+    const service = new SongbookService(repository, createSearchCache());
 
     await expect(
       service.browseArtists({ browse: 'artists', letter: 'B', page: 1, limit: 20 }),
@@ -107,7 +115,7 @@ describe('SongbookService', () => {
         .mockReturnValueOnce(languageBuilder)
         .mockReturnValueOnce(categoryBuilder),
     } as never;
-    const service = new SongbookService(repository);
+    const service = new SongbookService(repository, createSearchCache());
 
     await expect(service.filters()).resolves.toEqual({
       languages: ['English', 'Tagalog'],
@@ -118,7 +126,7 @@ describe('SongbookService', () => {
   it('returns 404 semantics for an unknown song', async () => {
     const builder = createQueryBuilder(null);
     const repository = { createQueryBuilder: jest.fn().mockReturnValue(builder) } as never;
-    const service = new SongbookService(repository);
+    const service = new SongbookService(repository, createSearchCache());
 
     await expect(service.findById(9999)).rejects.toBeInstanceOf(NotFoundException);
   });
