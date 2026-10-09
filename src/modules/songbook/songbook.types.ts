@@ -16,10 +16,22 @@ export interface SongbookPaginationResponse {
   totalPages: number;
   hasNextPage: boolean;
   hasPreviousPage: boolean;
+  /** Total before an A-Z/# browse-letter filter is applied. */
+  catalogTotal?: number;
 }
 
 export interface SongbookSearchResponse {
   data: SongbookSongResponse[];
+  pagination: SongbookPaginationResponse;
+}
+
+export interface SongbookArtistResponse {
+  artist: string;
+  songCount: number;
+}
+
+export interface SongbookArtistBrowseResponse {
+  data: SongbookArtistResponse[];
   pagination: SongbookPaginationResponse;
 }
 

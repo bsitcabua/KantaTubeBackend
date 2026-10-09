@@ -6,11 +6,18 @@ export const SONGBOOK_MAX_LIMIT = 100;
 export const SONGBOOK_MAX_PAGE = 100_000;
 export const SONGBOOK_MAX_QUERY_LENGTH = 100;
 export const SONGBOOK_MAX_FILTER_LENGTH = 60;
+export const SONGBOOK_MAX_ARTIST_LENGTH = 255;
+
+export type SongbookBrowseMode = 'songs' | 'artists';
+export type SongbookBrowseLetter = string;
 
 export interface SongbookSearchRequest {
   query?: string;
   language?: string;
   category?: string;
+  browse?: SongbookBrowseMode;
+  letter?: SongbookBrowseLetter;
+  artist?: string;
   page: number;
   limit: number;
 }
@@ -21,11 +28,18 @@ export function parseSongbookSearchRequest(
   category: unknown,
   page: unknown,
   limit: unknown,
+  browse: unknown = undefined,
+  letter: unknown = undefined,
+  artist: unknown = undefined,
 ): SongbookSearchRequest {
+  const browseMode = parseBrowseMode(browse);
   return {
     query: parseOptionalQuery(query),
     language: parseOptionalFilter(language, 'language'),
     category: parseOptionalFilter(category, 'category'),
+    browse: browseMode,
+    letter: parseBrowseLetter(letter),
+    artist: parseOptionalArtist(artist),
     page: parsePositiveInteger(
       page,
       'page',
@@ -97,6 +111,33 @@ function parseOptionalFilter(
   return normalized;
 }
 
+function parseBrowseMode(value: unknown): SongbookBrowseMode {
+  if (value === undefined || value === null || value === '') return 'songs';
+  if (value === 'songs' || value === 'artists') return value;
+  throw new BadRequestException({
+    code: 'invalid_songbook_browse_mode',
+    message: 'browse must be either songs or artists.',
+  });
+}
+
+function parseBrowseLetter(value: unknown): SongbookBrowseLetter | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') throw invalidBrowseLetter();
+
+  const normalized = value.trim().toUpperCase();
+  if (!/^[A-Z]$/.test(normalized) && normalized !== '#') throw invalidBrowseLetter();
+  return normalized;
+}
+
+function parseOptionalArtist(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') throw invalidArtist();
+
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  if (!normalized || normalized.length > SONGBOOK_MAX_ARTIST_LENGTH) throw invalidArtist();
+  return normalized;
+}
+
 function parsePositiveInteger(
   value: unknown,
   field: 'page' | 'limit',
@@ -129,6 +170,20 @@ function invalidFilter(field: 'language' | 'category'): BadRequestException {
   return new BadRequestException({
     code: 'invalid_songbook_filter',
     message: `${field} must be ${SONGBOOK_MAX_FILTER_LENGTH} characters or fewer.`,
+  });
+}
+
+function invalidBrowseLetter(): BadRequestException {
+  return new BadRequestException({
+    code: 'invalid_songbook_browse_letter',
+    message: 'letter must be A-Z or #.',
+  });
+}
+
+function invalidArtist(): BadRequestException {
+  return new BadRequestException({
+    code: 'invalid_songbook_artist',
+    message: `artist must be ${SONGBOOK_MAX_ARTIST_LENGTH} characters or fewer.`,
   });
 }
 

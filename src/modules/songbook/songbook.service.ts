@@ -1,10 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { KaraokeSong } from '../karaoke/entities/karaoke-song.entity';
 import { SongbookSearchRequest } from './songbook.dto';
 import {
   SongbookFiltersResponse,
+  SongbookArtistBrowseResponse,
+  SongbookPaginationResponse,
   SongbookSearchResponse,
   SongbookSongResponse,
 } from './songbook.types';
@@ -17,30 +19,8 @@ export class SongbookService {
   ) {}
 
   async search(request: SongbookSearchRequest): Promise<SongbookSearchResponse> {
-    const queryBuilder = this.songs
-      .createQueryBuilder('song')
-      .select([
-        'song.id',
-        'song.title',
-        'song.artist',
-        'song.language',
-        'song.category',
-        'song.youtubeVideoId',
-        'song.source',
-        'song.isVerifiedKaraoke',
-      ]);
-
-    if (request.language) {
-      queryBuilder.andWhere('song.language = :language', {
-        language: request.language,
-      });
-    }
-
-    if (request.category) {
-      queryBuilder.andWhere('song.category = :category', {
-        category: request.category,
-      });
-    }
+    const queryBuilder = this.createSongQuery();
+    this.applyFilters(queryBuilder, request);
 
     if (request.query) {
       const escapedQuery = this.escapeLikePattern(request.query);
@@ -67,6 +47,7 @@ export class SongbookService {
           contains: `%${escapedQuery}%`,
         });
     } else {
+      this.applyBrowseLetter(queryBuilder, 'song.title', request.letter);
       queryBuilder.orderBy('song.title', 'ASC');
     }
 
@@ -77,17 +58,51 @@ export class SongbookService {
       .take(request.limit);
 
     const [songs, total] = await queryBuilder.getManyAndCount();
-    const totalPages = total === 0 ? 0 : Math.ceil(total / request.limit);
+    const pagination: SongbookPaginationResponse = this.toPagination(
+      request.page,
+      request.limit,
+      total,
+    );
+    if (!request.query && !request.artist) {
+      const catalogQuery = this.songs.createQueryBuilder('song');
+      this.applyFilters(catalogQuery, { ...request, letter: undefined });
+      pagination.catalogTotal = await catalogQuery.getCount();
+    }
 
     return {
       data: songs.map((song) => this.toPublicSong(song)),
+      pagination,
+    };
+  }
+
+  async browseArtists(request: SongbookSearchRequest): Promise<SongbookArtistBrowseResponse> {
+    const queryBuilder = this.songs
+      .createQueryBuilder('song')
+      .select('song.artist', 'artist')
+      .addSelect('COUNT(song.id)', 'songCount')
+      .where("song.artist IS NOT NULL AND song.artist <> ''");
+    this.applyFilters(queryBuilder, request);
+    this.applyBrowseLetter(queryBuilder, 'song.artist', request.letter);
+    queryBuilder
+      .groupBy('song.artist')
+      .orderBy('song.artist', 'ASC')
+      .skip((request.page - 1) * request.limit)
+      .take(request.limit);
+
+    const [artists, total, catalogTotal] = await Promise.all([
+      queryBuilder.getRawMany<{ artist: string; songCount: string }>(),
+      this.countArtists(request, true),
+      this.countArtists(request, false),
+    ]);
+
+    return {
+      data: artists.map((artist) => ({
+        artist: artist.artist,
+        songCount: Number(artist.songCount),
+      })),
       pagination: {
-        page: request.page,
-        limit: request.limit,
-        total,
-        totalPages,
-        hasNextPage: request.page < totalPages,
-        hasPreviousPage: request.page > 1 && total > 0,
+        ...this.toPagination(request.page, request.limit, total),
+        catalogTotal,
       },
     };
   }
@@ -159,5 +174,74 @@ export class SongbookService {
 
   private escapeLikePattern(value: string): string {
     return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+  }
+
+  private createSongQuery(): SelectQueryBuilder<KaraokeSong> {
+    return this.songs.createQueryBuilder('song').select([
+      'song.id',
+      'song.title',
+      'song.artist',
+      'song.language',
+      'song.category',
+      'song.youtubeVideoId',
+      'song.source',
+      'song.isVerifiedKaraoke',
+    ]);
+  }
+
+  private applyFilters(
+    queryBuilder: SelectQueryBuilder<KaraokeSong>,
+    request: SongbookSearchRequest,
+  ): void {
+    if (request.language) {
+      queryBuilder.andWhere('song.language = :language', { language: request.language });
+    }
+    if (request.category) {
+      queryBuilder.andWhere('song.category = :category', { category: request.category });
+    }
+    if (request.artist) {
+      queryBuilder.andWhere('song.artist = :artist', { artist: request.artist });
+    }
+  }
+
+  private applyBrowseLetter(
+    queryBuilder: SelectQueryBuilder<KaraokeSong>,
+    column: 'song.title' | 'song.artist',
+    letter?: string,
+  ): void {
+    if (!letter) return;
+    if (letter === '#') {
+      queryBuilder.andWhere(`LOWER(LEFT(${column}, 1)) NOT REGEXP '^[a-z]'`);
+      return;
+    }
+    queryBuilder.andWhere(`UPPER(LEFT(${column}, 1)) = :browseLetter`, {
+      browseLetter: letter,
+    });
+  }
+
+  private async countArtists(
+    request: SongbookSearchRequest,
+    includeLetter: boolean,
+  ): Promise<number> {
+    const queryBuilder = this.songs
+      .createQueryBuilder('song')
+      .select('COUNT(DISTINCT song.artist)', 'total')
+      .where("song.artist IS NOT NULL AND song.artist <> ''");
+    this.applyFilters(queryBuilder, request);
+    if (includeLetter) this.applyBrowseLetter(queryBuilder, 'song.artist', request.letter);
+    const result = await queryBuilder.getRawOne<{ total: string }>();
+    return Number(result?.total ?? 0);
+  }
+
+  private toPagination(page: number, limit: number, total: number) {
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+    return {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1 && total > 0,
+    };
   }
 }

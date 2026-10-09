@@ -6,6 +6,7 @@ describe('SongbookService', () => {
   function createQueryBuilder(result: unknown) {
     const builder = {
       select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
@@ -14,8 +15,11 @@ describe('SongbookService', () => {
       skip: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
       distinct: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
       getManyAndCount: jest.fn().mockResolvedValue(result),
+      getCount: jest.fn().mockResolvedValue(result),
       getOne: jest.fn().mockResolvedValue(result),
+      getRawOne: jest.fn().mockResolvedValue(result),
       getRawMany: jest.fn().mockResolvedValue(result),
     };
     return builder;
@@ -60,6 +64,39 @@ describe('SongbookService', () => {
     });
     expect(builder.skip).toHaveBeenCalledWith(0);
     expect(builder.take).toHaveBeenCalledWith(20);
+  });
+
+  it('returns letter-filtered artists and the unfiltered artist count from the same Songbook API', async () => {
+    const artistBuilder = createQueryBuilder([{ artist: 'Ben&Ben', songCount: '12' }]);
+    const filteredCountBuilder = createQueryBuilder({ total: '1' });
+    const catalogCountBuilder = createQueryBuilder({ total: '342' });
+    const repository = {
+      createQueryBuilder: jest.fn()
+        .mockReturnValueOnce(artistBuilder)
+        .mockReturnValueOnce(filteredCountBuilder)
+        .mockReturnValueOnce(catalogCountBuilder),
+    } as never;
+    const service = new SongbookService(repository);
+
+    await expect(
+      service.browseArtists({ browse: 'artists', letter: 'B', page: 1, limit: 20 }),
+    ).resolves.toEqual({
+      data: [{ artist: 'Ben&Ben', songCount: 12 }],
+      pagination: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+        catalogTotal: 342,
+      },
+    });
+    expect(artistBuilder.groupBy).toHaveBeenCalledWith('song.artist');
+    expect(artistBuilder.andWhere).toHaveBeenCalledWith(
+      'UPPER(LEFT(song.artist, 1)) = :browseLetter',
+      { browseLetter: 'B' },
+    );
   });
 
   it('returns distinct filter values from the database', async () => {

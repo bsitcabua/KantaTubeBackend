@@ -10,6 +10,9 @@ describe('Songbook DTO parsing', () => {
       query: 'G',
       language: 'English',
       category: 'OPM',
+      browse: 'songs',
+      letter: undefined,
+      artist: undefined,
       page: 1,
       limit: 20,
     });
@@ -17,9 +20,41 @@ describe('Songbook DTO parsing', () => {
       query: undefined,
       language: undefined,
       category: undefined,
+      browse: 'songs',
+      letter: undefined,
+      artist: undefined,
       page: 1,
       limit: 20,
     });
+  });
+
+  it('parses the existing Songbook endpoint browse parameters', () => {
+    expect(
+      parseSongbookSearchRequest(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'artists',
+        ' b ',
+      ),
+    ).toEqual({
+      query: undefined,
+      language: undefined,
+      category: undefined,
+      browse: 'artists',
+      letter: 'B',
+      artist: undefined,
+      page: 1,
+      limit: 20,
+    });
+    expect(() =>
+      parseSongbookSearchRequest(undefined, undefined, undefined, undefined, undefined, 'artists', '12'),
+    ).toThrow(BadRequestException);
+    expect(
+      parseSongbookSearchRequest(undefined, undefined, undefined, undefined, undefined, 'songs', '#'),
+    ).toMatchObject({ browse: 'songs', letter: '#' });
   });
 
   it('rejects invalid pagination and oversized query values', () => {

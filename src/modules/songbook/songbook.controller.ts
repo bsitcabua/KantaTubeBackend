@@ -21,15 +21,28 @@ export class SongbookController {
     @Query('category') category: unknown,
     @Query('page') page: unknown,
     @Query('limit') limit: unknown,
+    @Query('browse') browse: unknown,
+    @Query('letter') letter: unknown,
+    @Query('artist') artist: unknown,
     @Headers('x-kantatube-visitor-id') visitorId: unknown,
     @Req() request: Request,
   ) {
     this.rateLimiter.checkSongbookSearch(
       this.getClientId(request, visitorId),
     );
-    return this.songbook.search(
-      parseSongbookSearchRequest(query, language, category, page, limit),
+    const searchRequest = parseSongbookSearchRequest(
+      query,
+      language,
+      category,
+      page,
+      limit,
+      browse,
+      letter,
+      artist,
     );
+    return searchRequest.browse === 'artists'
+      ? this.songbook.browseArtists(searchRequest)
+      : this.songbook.search(searchRequest);
   }
 
   @Get('filters')
