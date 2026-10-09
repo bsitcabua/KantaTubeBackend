@@ -43,6 +43,15 @@ export class RateLimiterService {
     this.check(`search:${clientId}`, 20, 60_000, 'youtube_search_rate_limited');
   }
 
+  checkSongbookSearch(clientId: string): void {
+    this.check(
+      `songbook-search:${clientId}`,
+      60,
+      60_000,
+      'songbook_search_rate_limited',
+    );
+  }
+
   checkRegistration(clientId: string): void {
     this.check(
       `personal-key:${clientId}`,
