@@ -718,7 +718,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     )
       return this.validCommandOptions(data);
     if (eventName === 'onSearch')
-      return this.stringField(data, 'search', 200) !== null;
+      return this.stringFieldAllowEmpty(data, 'search', 200) !== null;
     if (['addPerformer', 'removePerformer'].includes(eventName)) {
       const record = this.recordField(data);
       return record
@@ -965,6 +965,16 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ): string | null {
     const result = this.stringValue(this.recordField(value)?.[field], max);
     return result || null;
+  }
+  private stringFieldAllowEmpty(
+    value: unknown,
+    field: string,
+    max: number,
+  ): string | null {
+    const fieldValue = this.recordField(value)?.[field];
+    return typeof fieldValue === 'string' && fieldValue.trim().length <= max
+      ? fieldValue.trim()
+      : null;
   }
   private booleanField(value: unknown, field: string): boolean | null {
     const fieldValue = this.recordField(value)?.[field];
