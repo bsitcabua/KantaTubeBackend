@@ -31,9 +31,10 @@ import {
 
 @Injectable()
 export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
-  static readonly maxActiveSessions = 2;
+  static readonly defaultMaxActiveSessions = 1;
   static readonly defaultLeaseSeconds = 120;
 
+  private readonly maxActiveSessions: number;
   private readonly leaseMs: number;
   private readonly logger = new Logger(KaraokeSessionService.name);
   private cleanupTimer?: ReturnType<typeof setInterval>;
@@ -46,6 +47,14 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     private readonly queueItems: Repository<KaraokeQueueItem>,
     private readonly config: ConfigService,
   ) {
+    const configuredMaximum = Number(
+      this.config.get<string>('MAX_ACTIVE_SESSIONS'),
+    );
+    this.maxActiveSessions =
+      Number.isInteger(configuredMaximum) && configuredMaximum > 0
+        ? configuredMaximum
+        : KaraokeSessionService.defaultMaxActiveSessions;
+
     const configuredSeconds = Number(
       this.config.get<string>('KARAOKE_SESSION_LEASE_SECONDS'),
     );
@@ -109,7 +118,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
               leaseExpiresAt: MoreThan(now),
             },
           });
-          if (activeCount >= KaraokeSessionService.maxActiveSessions) {
+          if (activeCount >= this.maxActiveSessions) {
             // Returning instead of throwing commits the stale-session cleanup.
             return null;
           }
@@ -468,7 +477,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     return new ConflictException({
       code: 'karaoke_session_limit_reached',
       message: 'End an active karaoke session before starting another.',
-      limit: KaraokeSessionService.maxActiveSessions,
+      limit: this.maxActiveSessions,
     });
   }
 

@@ -33,6 +33,7 @@ describe('KaraokeSessionService', () => {
     dataSource?: Partial<DataSource>;
     repository?: Partial<Repository<KaraokeSession>>;
     leaseSeconds?: string;
+    maxActiveSessions?: string;
   }) {
     const repository = {
       update: jest.fn().mockResolvedValue({ affected: 0 }),
@@ -41,7 +42,11 @@ describe('KaraokeSessionService', () => {
       ...options?.repository,
     } as unknown as Repository<KaraokeSession>;
     const config = {
-      get: jest.fn(() => options?.leaseSeconds),
+      get: jest.fn((key: string) =>
+        key === 'MAX_ACTIVE_SESSIONS'
+          ? options?.maxActiveSessions
+          : options?.leaseSeconds,
+      ),
     } as unknown as ConfigService;
     const dataSource = options?.dataSource as DataSource;
     const queueRepository = {} as Repository<KaraokeQueueItem>;
@@ -105,7 +110,7 @@ describe('KaraokeSessionService', () => {
         }
       }),
     } as unknown as DataSource;
-    const { service } = createService({ dataSource });
+    const { service } = createService({ dataSource, maxActiveSessions: '2' });
 
     const results = await Promise.allSettled([
       service.create(ownerId, 'Living Room'),
