@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { User } from '../users/entities/user.entity';
 import { KaraokeSession } from './entities/karaoke-session.entity';
 import { KaraokeQueueItem } from './entities/karaoke-queue-item.entity';
+import { KaraokeSessionPerformer } from './entities/karaoke-session-performer.entity';
 import { KaraokePairingSession } from './entities/karaoke-pairing-session.entity';
 import { KaraokeRemoteGrant } from './entities/karaoke-remote-grant.entity';
 import { KaraokeSessionController } from './karaoke-session.controller';
@@ -24,6 +25,7 @@ import { KaraokeLibraryCacheService } from './karaoke-library-cache.service';
     TypeOrmModule.forFeature([
       KaraokeSession,
       KaraokeQueueItem,
+      KaraokeSessionPerformer,
       KaraokePairingSession,
       KaraokeRemoteGrant,
       KaraokeRemoteHostSession,

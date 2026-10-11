@@ -91,6 +91,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const pairingToken = this.stringValue(auth.pairingToken, 256);
       const grantToken = this.stringValue(auth.grantToken, 256);
       const hostToken = this.stringValue(auth.hostToken, 256);
+      const clientId = this.stringValue(auth.clientId, 36);
       const socketTicket = this.stringValue(auth.socketTicket, 4096);
 
       if (pairingToken && deviceId) {
@@ -120,7 +121,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         await this.connectGuestMain(client, sessionId, hostToken);
         return;
       }
-      await this.connectMain(client, sessionId, socketTicket);
+      await this.connectMain(client, sessionId, socketTicket, clientId);
     } catch (error) {
       const socketError = this.errorPayload(error);
       this.logger.warn(
@@ -440,6 +441,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client: Socket,
     sessionId: string,
     socketTicket: string,
+    clientId: string,
   ): Promise<void> {
     const auth = this.authService();
     const user = socketTicket
@@ -455,7 +457,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         'SESSION_NOT_FOUND',
         'A valid karaoke session is required.',
       );
-    await this.authorization().findActiveSession(user.id, sessionId);
+    await this.authorization().findActiveSession(user.id, sessionId, clientId);
     const context: MainContext = {
       kind: 'main',
       sessionId,

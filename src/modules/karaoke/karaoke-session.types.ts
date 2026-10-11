@@ -22,4 +22,5 @@ export interface KaraokeQueueItemResponse {
 export interface KaraokeSessionTransferResponse {
   session: KaraokeSessionResponse;
   queue: KaraokeQueueItemResponse[];
+  performers: string[];
 }

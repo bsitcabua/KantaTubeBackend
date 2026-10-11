@@ -86,8 +86,9 @@ export class RemoteAuthorizationService {
   async createPairingToken(
     ownerId: string,
     sessionId: string,
+    clientId?: unknown,
   ): Promise<PairingInvitation> {
-    const session = await this.findActiveSession(ownerId, sessionId);
+    const session = await this.findActiveSession(ownerId, sessionId, clientId);
     return this.issuePairingToken('karaoke', session.id);
   }
 
@@ -452,6 +453,7 @@ export class RemoteAuthorizationService {
   async findActiveSession(
     ownerId: string,
     sessionId: string,
+    clientId?: unknown,
   ): Promise<KaraokeSession> {
     const session = await this.sessions.findOne({
       where: { id: sessionId, ownerId },
@@ -461,7 +463,19 @@ export class RemoteAuthorizationService {
         code: 'SESSION_NOT_FOUND',
         message: 'Karaoke session not found.',
       });
-    return this.assertActiveSession(session);
+    const activeSession = this.assertActiveSession(session);
+    if (
+      typeof clientId === 'string' &&
+      clientId.trim() &&
+      activeSession.clientId &&
+      activeSession.clientId !== clientId.trim()
+    ) {
+      throw new ConflictException({
+        code: 'karaoke_session_taken_over',
+        message: 'This karaoke session is active on another device.',
+      });
+    }
+    return activeSession;
   }
 
   async findActiveSessionById(sessionId: string): Promise<KaraokeSession> {
