@@ -12,6 +12,10 @@ import {
   RemoteAuthorizationService,
   RemoteSessionKind,
 } from './modules/karaoke/remote-authorization.service';
+import {
+  KaraokeLibraryChange,
+  KaraokeLibraryEventsService,
+} from './modules/karaoke/karaoke-library-events.service';
 import { RateLimiterService } from './common/rate-limit/rate-limiter.service';
 import {
   MAIN_RESPONSE_EVENTS,
@@ -34,11 +38,26 @@ interface RemoteContext {
   sessionKind: RemoteSessionKind;
   deviceId: string;
   grantId: string;
+  accountId?: string;
   state: 'pending' | 'approved';
 }
 
 type SocketContext = MainContext | RemoteContext;
 type UnknownRecord = Record<string, unknown>;
+
+interface RemoteSearchRoute {
+  socketId: string;
+  sessionId: string;
+  sessionKind: RemoteSessionKind;
+  expiresAt: number;
+}
+
+interface RemoteReserveRoute {
+  socketId: string;
+  sessionId: string;
+  sessionKind: RemoteSessionKind;
+  expiresAt: number;
+}
 
 interface SocketAck {
   ok: boolean;
@@ -66,20 +85,28 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(SearchGateway.name);
   private readonly mainSocketBySession = new Map<string, string>();
+  private readonly remoteSearchRoutes = new Map<string, RemoteSearchRoute>();
+  private readonly remoteReserveRoutes = new Map<string, RemoteReserveRoute>();
+  private remoteSearchRouteSequence = 0;
+  private remoteReserveRouteSequence = 0;
+  private readonly remoteSearchRouteTtlMs = 60_000;
   private readonly roomPrefix = 'karaoke:';
   private readonly removeInvalidationListener?: () => void;
+  private readonly removeLibraryListener?: () => void;
 
   constructor(
     @Optional() private readonly auth?: AuthService,
     @Optional()
     private readonly remoteAuthorization?: RemoteAuthorizationService,
     @Optional() private readonly rateLimiter?: RateLimiterService,
+    @Optional() private readonly libraryEvents?: KaraokeLibraryEventsService,
   ) {
     this.removeInvalidationListener =
       this.remoteAuthorization?.onSessionInvalidated?.(
         (sessionId, sessionKind) =>
           this.handleSessionInvalidated(sessionId, sessionKind),
       );
+    this.removeLibraryListener = this.libraryEvents?.subscribe((change) => this.handleLibraryChanged(change));
   }
 
   async handleConnection(client: Socket): Promise<void> {
@@ -133,8 +160,12 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   handleDisconnect(client: Socket): void {
+    this.removeRemoteSearchRoutesForSocket(client.id);
+    this.removeRemoteReserveRoutesForSocket(client.id);
     const context = this.context(client);
     if (!context) return;
+    const wasActiveRemote =
+      context.kind === 'remote' && context.state === 'approved';
     if (
       context.kind === 'main' &&
       this.mainSocketBySession.get(this.sessionKey(context)) === client.id
@@ -144,11 +175,24 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         ?.to(this.room(context.sessionId, context.sessionKind))
         .emit('mainClientStatus', { status: 'offline' });
     }
+    if (wasActiveRemote) {
+      this.emitActiveRemoteCount(context.sessionId, context.sessionKind);
+    }
     this.logger.debug(`Socket disconnected: ${client.id}`);
   }
 
   onModuleDestroy(): void {
     this.removeInvalidationListener?.();
+    this.removeLibraryListener?.();
+  }
+
+  private handleLibraryChanged(change: KaraokeLibraryChange): void {
+    this.server?.to(this.accountRoom(change.userId)).emit('accountLibraryChanged', {
+      resource: change.resource,
+      type: change.type,
+      resourceId: change.resourceId,
+      version: change.version,
+    });
   }
 
   private handleSessionInvalidated(
@@ -165,6 +209,9 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       remote.emit('remoteSessionEnded', { sessionId });
       remote.disconnect(true);
     }
+    this.removeRemoteSearchRoutesForSession(sessionId, sessionKind);
+    this.removeRemoteReserveRoutesForSession(sessionId, sessionKind);
+    this.emitActiveRemoteCount(sessionId, sessionKind);
     main?.emit('remoteSessionEnded', { sessionId });
     this.mainSocketBySession.delete(this.sessionKey(sessionId, sessionKind));
     this.server
@@ -217,12 +264,14 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       remote.emit('remoteConnectionApproved', {
         sessionId: context.sessionId,
         grantToken: approved.grantToken,
+        sessionKind: context.sessionKind,
       });
       remote.emit('mainClientStatus', {
         status: this.mainSocketBySession.has(this.sessionKey(context))
           ? 'online'
           : 'offline',
       });
+      this.emitActiveRemoteCount(context.sessionId, context.sessionKind);
       this.logger.log(`Remote ${requestId.slice(0, 8)} approved`);
       return { ok: true };
     } catch (error) {
@@ -289,6 +338,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         });
         remote.disconnect(true);
       }
+      this.emitActiveRemoteCount(context.sessionId, context.sessionKind);
       return { ok: true };
     } catch (error) {
       return this.fail(client, ...this.errorTuple(error));
@@ -310,6 +360,18 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('stopAllSong')
   stopAllSong(client: Socket, payload: SocketEnvelope): Promise<SocketAck> {
     return this.handleRemoteCommand(client, 'stopAllSong', payload);
+  }
+  @SubscribeMessage('restartVideo')
+  restartVideo(client: Socket, payload: SocketEnvelope): Promise<SocketAck> {
+    return this.handleRemoteCommand(client, 'restartVideo', payload);
+  }
+  @SubscribeMessage('moveReservedSong')
+  moveReservedSong(client: Socket, payload: SocketEnvelope): Promise<SocketAck> {
+    return this.handleRemoteCommand(client, 'moveReservedSong', payload);
+  }
+  @SubscribeMessage('removeReservedSong')
+  removeReservedSong(client: Socket, payload: SocketEnvelope): Promise<SocketAck> {
+    return this.handleRemoteCommand(client, 'removeReservedSong', payload);
   }
   @SubscribeMessage('onSearch')
   onSearch(client: Socket, payload: SocketEnvelope): Promise<SocketAck> {
@@ -386,6 +448,10 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   queueError(client: Socket, payload: SocketEnvelope): Promise<SocketAck> {
     return this.handleMainResponse(client, 'queueError', payload);
   }
+  @SubscribeMessage('queueDuplicateWarning')
+  queueDuplicateWarning(client: Socket, payload: SocketEnvelope): Promise<SocketAck> {
+    return this.handleMainResponse(client, 'queueDuplicateWarning', payload);
+  }
   @SubscribeMessage('performers')
   performers(client: Socket, payload: SocketEnvelope): Promise<SocketAck> {
     return this.handleMainResponse(client, 'performers', payload);
@@ -458,10 +524,16 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         'A valid karaoke session is required.',
       );
     await this.authorization().findActiveSession(user.id, sessionId, clientId);
+    const sessionKind = (await this.authorization().isClaimedGuestSession(
+      sessionId,
+      user.id,
+    ))
+      ? 'guest'
+      : 'karaoke';
     const context: MainContext = {
       kind: 'main',
       sessionId,
-      sessionKind: 'karaoke',
+      sessionKind,
       ownerId: user.id,
     };
     const existingId = this.mainSocketBySession.get(this.sessionKey(context));
@@ -475,15 +547,17 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     client.data.kantaTube = context;
     this.mainSocketBySession.set(this.sessionKey(context), client.id);
-    await client.join(this.room(sessionId, 'karaoke'));
+    await client.join(this.room(sessionId, sessionKind));
+    if (context.ownerId) await client.join(this.accountRoom(context.ownerId));
     this.server
-      .to(this.room(sessionId, 'karaoke'))
+      .to(this.room(sessionId, sessionKind))
       .emit('mainClientStatus', { status: 'online' });
-    this.notifyPendingRemotes(sessionId, 'karaoke', client);
+    this.notifyPendingRemotes(sessionId, sessionKind, client);
     client.emit('mainRegistered', {
       sessionId,
-      sessionKind: 'karaoke',
+      sessionKind,
     });
+    this.emitActiveRemoteCount(sessionId, sessionKind);
     this.logger.log(
       `Authenticated main socket registered for session ${this.redactSessionId(sessionId)} using ${socketTicket ? 'ticket' : 'cookie'} auth`,
     );
@@ -521,6 +595,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       sessionId,
       sessionKind: 'guest',
     });
+    this.emitActiveRemoteCount(sessionId, 'guest');
   }
 
   private async connectPendingRemote(
@@ -550,6 +625,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.emit('remoteConnectionPending', {
       sessionId: pending.sessionId,
       requestId: pending.grant.id,
+      sessionKind: pending.sessionKind,
     });
     const mainId = this.mainSocketBySession.get(
       this.sessionKey(pending.sessionId, pending.sessionKind),
@@ -572,6 +648,12 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const sessionKind: RemoteSessionKind = grant.remoteHostSessionId
       ? 'guest'
       : 'karaoke';
+    const accountId = grant.karaokeSessionId
+      ? (await this.authorization().findActiveSessionById(
+          grant.karaokeSessionId,
+          true,
+        )).ownerId
+      : undefined;
     this.disconnectDuplicateRemote(client, deviceId, sessionId, sessionKind);
     client.data.kantaTube = {
       kind: 'remote',
@@ -579,10 +661,15 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       sessionKind,
       deviceId,
       grantId: grant.id,
+      accountId,
       state: 'approved',
     } satisfies RemoteContext;
     await client.join(this.room(sessionId, sessionKind));
-    client.emit('remoteConnectionApproved', { sessionId });
+    const remoteContext = this.context(client);
+    if (remoteContext?.kind === 'remote' && remoteContext.accountId) {
+      await client.join(this.accountRoom(remoteContext.accountId));
+    }
+    client.emit('remoteConnectionApproved', { sessionId, sessionKind });
     client.emit('mainClientStatus', {
       status: this.mainSocketBySession.has(
         this.sessionKey(sessionId, sessionKind),
@@ -590,6 +677,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         ? 'online'
         : 'offline',
     });
+    this.emitActiveRemoteCount(sessionId, sessionKind);
   }
 
   private async handleRemoteCommand(
@@ -642,7 +730,19 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         'MAIN_CLIENT_OFFLINE',
         'The main karaoke screen is offline.',
       );
-    main.emit(eventName, { event: eventName, data: validation.data });
+    let forwardedData = validation.data;
+    if (eventName === 'onSearch') {
+      forwardedData = {
+        ...(validation.data as UnknownRecord),
+        remoteSearchRoute: this.createRemoteSearchRoute(client, context),
+      };
+    } else if (eventName === 'reserveSong') {
+      forwardedData = {
+        ...(validation.data as UnknownRecord),
+        remoteCommandRoute: this.createRemoteReserveRoute(client, context),
+      };
+    }
+    main.emit(eventName, { event: eventName, data: forwardedData });
     return { ok: true };
   }
 
@@ -669,6 +769,15 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return Promise.resolve(
         this.fail(client, 'INVALID_PAYLOAD', validation.message),
       );
+    if (eventName === 'searchResults') {
+      return Promise.resolve(this.routeSearchResponse(client, validation.data));
+    }
+    if (eventName === 'queueDuplicateWarning') {
+      return Promise.resolve(this.routeQueueDuplicateWarning(client, validation.data));
+    }
+    if (eventName === 'queueError' && this.stringValue(this.recordField(validation.data)?.remoteCommandRoute, 200)) {
+      return Promise.resolve(this.routeQueueError(client, validation.data));
+    }
     this.server
       .to(this.room(context.sessionId, context.sessionKind))
       .emit(eventName, { event: eventName, data: validation.data });
@@ -716,11 +825,35 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (eventName === 'clearAllPerformers')
       return this.validCommandOptions(data);
     if (
-      ['nextSong', 'stopAllSong', 'playVideo', 'pauseVideo'].includes(eventName)
+      ['nextSong', 'stopAllSong', 'playVideo', 'pauseVideo', 'restartVideo'].includes(eventName)
     )
       return this.validCommandOptions(data);
-    if (eventName === 'onSearch')
-      return this.stringFieldAllowEmpty(data, 'search', 200) !== null;
+    if (eventName === 'moveReservedSong') {
+      const record = this.recordField(data);
+      const direction = record ? this.stringValue(record.direction, 10) : '';
+      return !!record && Object.keys(record).every((key) => ['index', 'direction'].includes(key)) && this.safeIntegerField(record.index, 0, 1000) && ['up', 'down'].includes(direction);
+    }
+    if (eventName === 'removeReservedSong') {
+      const record = this.recordField(data);
+      return !!record && Object.keys(record).every((key) => key === 'index') && this.safeIntegerField(record.index, 0, 1000);
+    }
+    if (eventName === 'onSearch') {
+      const record = this.recordField(data);
+      if (!record || !Object.keys(record).every((key) => ['search', 'requestId', 'source', 'language', 'category', 'page', 'browseMode', 'browseLetter', 'selectedArtist'].includes(key))) return false;
+      if (this.stringFieldAllowEmpty(record, 'search', 200) === null) return false;
+      if (record.requestId !== undefined && this.stringValue(record.requestId, 64) === '') return false;
+      if (record.source !== undefined && !['songbook', 'youtube'].includes(this.stringValue(record.source, 20))) return false;
+      if (record.language !== undefined && this.stringValue(record.language, 120) === '') return false;
+      if (record.category !== undefined && this.stringValue(record.category, 120) === '') return false;
+      if (record.page !== undefined && !this.safeIntegerField(record.page, 1, 100_000)) return false;
+      if (record.browseMode !== undefined && !['songs', 'artists'].includes(this.stringValue(record.browseMode, 20))) return false;
+      if (record.browseLetter !== undefined) {
+        const letter = this.stringValue(record.browseLetter, 2);
+        if (!/^[A-Z#]$/.test(letter)) return false;
+      }
+      if (record.selectedArtist !== undefined && this.stringValue(record.selectedArtist, 160) === '') return false;
+      return true;
+    }
     if (['addPerformer', 'removePerformer'].includes(eventName)) {
       const record = this.recordField(data);
       return record
@@ -766,8 +899,30 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private validResponseData(eventName: string, data: unknown): boolean {
-    if (eventName === 'videoStatus')
-      return this.stringField(data, 'videoStatus', 30) !== null;
+    if (eventName === 'videoStatus') {
+      const record = this.recordField(data);
+      if (!record || this.stringField(record, 'videoStatus', 30) === null)
+        return false;
+      if (
+        Object.keys(record).some(
+          (key) => !['videoStatus', 'currentVideoTime', 'videoDuration', 'progressPercent'].includes(key),
+        )
+      )
+        return false;
+      if (record.currentVideoTime !== undefined && this.stringField(record, 'currentVideoTime', 20) === null)
+        return false;
+      if (record.videoDuration !== undefined && this.stringField(record, 'videoDuration', 20) === null)
+        return false;
+      if (
+        record.progressPercent !== undefined &&
+        (typeof record.progressPercent !== 'number' ||
+          !Number.isFinite(record.progressPercent) ||
+          record.progressPercent < 0 ||
+          record.progressPercent > 100)
+      )
+        return false;
+      return true;
+    }
     if (eventName === 'performers') {
       const performers = this.recordField(data)?.performers;
       return (
@@ -777,8 +932,17 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
     }
     if (eventName === 'searchResults') {
-      const results = this.recordField(data)?.searchResults;
-      return Array.isArray(results) && results.length <= 200;
+      const record = this.recordField(data);
+      const results = record?.searchResults;
+      if (!record || !Array.isArray(results) || results.length > 200) return false;
+      if (record.remoteSearchRoute !== undefined && !this.stringValue(record.remoteSearchRoute, 200)) return false;
+      if (record.searchError !== undefined) {
+        const error = this.recordField(record.searchError);
+        const code = this.stringValue(error?.code, 60);
+        const message = this.stringValue(error?.message, 500);
+        if (!error || !['invalid_query', 'guest_limit', 'queue_full', 'quota_exceeded', 'rate_limited', 'network', 'backend', 'personal_key_authentication', 'songbook', 'unknown'].includes(code) || !message) return false;
+      }
+      return true;
     }
     if (eventName === 'queueError') {
       const record = this.recordField(data);
@@ -789,8 +953,18 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         Number.isSafeInteger(record.queueCount) &&
         (record.queueCount as number) >= 0 &&
         Number.isSafeInteger(record.maxQueueSize) &&
-        (record.maxQueueSize as number) > 0
+        (record.maxQueueSize as number) > 0 &&
+        (record.remoteCommandRoute === undefined || this.stringField(record, 'remoteCommandRoute', 200) !== null)
       );
+    }
+    if (eventName === 'queueDuplicateWarning') {
+      const record = this.recordField(data);
+      return !!record &&
+        record.code === 'QUEUE_DUPLICATE' &&
+        this.stringField(record, 'remoteCommandRoute', 200) !== null &&
+        this.stringField(record, 'performer', 60) !== null &&
+        this.validSong(record.song) &&
+        this.validSearchSong(record.searchSong);
     }
     if (eventName === 'songReserved') return !!this.recordField(data);
     if (eventName === 'toggleThemeModeFromMain')
@@ -822,6 +996,19 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     );
   }
 
+  private validSearchSong(value: unknown): boolean {
+    const song = this.recordField(value);
+    const id = this.recordField(song?.id);
+    const snippet = this.recordField(song?.snippet);
+    const thumbnails = this.recordField(snippet?.thumbnails);
+    const medium = this.recordField(thumbnails?.medium);
+    return !!song &&
+      this.stringValue(id?.videoId, 20) !== '' &&
+      this.stringField(snippet, 'title', 200) !== null &&
+      this.stringField(snippet, 'description', 2_000) !== null &&
+      /^https?:\/\//i.test(this.stringValue(medium?.url, 2_048));
+  }
+
   private requireMain(client: Socket): MainContext | null {
     const context = this.context(client);
     return context?.kind === 'main' ? context : null;
@@ -850,6 +1037,33 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         );
       },
     );
+  }
+
+  private emitActiveRemoteCount(
+    sessionId: string,
+    sessionKind: RemoteSessionKind,
+  ): void {
+    const mainId = this.mainSocketBySession.get(
+      this.sessionKey(sessionId, sessionKind),
+    );
+    const main = mainId
+      ? this.server?.sockets?.sockets?.get(mainId)
+      : undefined;
+    if (!main) return;
+
+    const count = [...(this.server?.sockets?.sockets?.values() ?? [])].filter(
+      (socket) => {
+        const context = this.context(socket);
+        return (
+          socket.connected !== false &&
+          context?.kind === 'remote' &&
+          context.state === 'approved' &&
+          context.sessionId === sessionId &&
+          context.sessionKind === sessionKind
+        );
+      },
+    ).length;
+    main.emit('activeRemoteCount', { count });
   }
 
   private notifyPendingRemotes(
@@ -932,8 +1146,134 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       : 'Browser remote';
   }
 
+  private createRemoteSearchRoute(client: Socket, context: RemoteContext): string {
+    this.pruneRemoteSearchRoutes();
+    const route = `remote-search-${Date.now()}-${++this.remoteSearchRouteSequence}`;
+    this.remoteSearchRoutes.set(route, {
+      socketId: client.id,
+      sessionId: context.sessionId,
+      sessionKind: context.sessionKind,
+      expiresAt: Date.now() + this.remoteSearchRouteTtlMs,
+    });
+    return route;
+  }
+
+  private createRemoteReserveRoute(client: Socket, context: RemoteContext): string {
+    this.pruneRemoteReserveRoutes();
+    const route = `remote-reserve-${Date.now()}-${++this.remoteReserveRouteSequence}`;
+    this.remoteReserveRoutes.set(route, {
+      socketId: client.id,
+      sessionId: context.sessionId,
+      sessionKind: context.sessionKind,
+      expiresAt: Date.now() + this.remoteSearchRouteTtlMs,
+    });
+    return route;
+  }
+
+  private routeSearchResponse(client: Socket, data: unknown): SocketAck {
+    const context = this.context(client);
+    const record = this.recordField(data);
+    const routeId = this.stringValue(record?.remoteSearchRoute, 200);
+    if (!context || context.kind !== 'main' || !routeId) return { ok: true };
+
+    const route = this.remoteSearchRoutes.get(routeId);
+    this.remoteSearchRoutes.delete(routeId);
+    if (!route || route.sessionId !== context.sessionId || route.sessionKind !== context.sessionKind || route.expiresAt <= Date.now()) return { ok: true };
+
+    const remote = this.server?.sockets?.sockets?.get(route.socketId);
+    const remoteContext = remote ? this.context(remote) : null;
+    if (!remote || !remoteContext || remoteContext.kind !== 'remote' || remoteContext.state !== 'approved' || remoteContext.sessionId !== route.sessionId || remoteContext.sessionKind !== route.sessionKind) return { ok: true };
+
+    const responseData = { ...record };
+    delete responseData.remoteSearchRoute;
+    remote.emit('searchResults', { event: 'searchResults', data: responseData });
+    return { ok: true };
+  }
+
+  private routeQueueDuplicateWarning(client: Socket, data: unknown): SocketAck {
+    const context = this.context(client);
+    const record = this.recordField(data);
+    const routeId = this.stringValue(record?.remoteCommandRoute, 200);
+    if (!context || context.kind !== 'main' || !routeId) return { ok: true };
+
+    const route = this.remoteReserveRoutes.get(routeId);
+    this.remoteReserveRoutes.delete(routeId);
+    if (!route || route.sessionId !== context.sessionId || route.sessionKind !== context.sessionKind || route.expiresAt <= Date.now()) return { ok: true };
+
+    const remote = this.server?.sockets?.sockets?.get(route.socketId);
+    const remoteContext = remote ? this.context(remote) : null;
+    if (!remote || !remoteContext || remoteContext.kind !== 'remote' || remoteContext.state !== 'approved' || remoteContext.sessionId !== route.sessionId || remoteContext.sessionKind !== route.sessionKind) return { ok: true };
+
+    const responseData = { ...record };
+    delete responseData.remoteCommandRoute;
+    remote.emit('queueDuplicateWarning', { event: 'queueDuplicateWarning', data: responseData });
+    return { ok: true };
+  }
+
+  private routeQueueError(client: Socket, data: unknown): SocketAck {
+    const context = this.context(client);
+    const record = this.recordField(data);
+    const routeId = this.stringValue(record?.remoteCommandRoute, 200);
+    if (!context || context.kind !== 'main' || !routeId) return { ok: true };
+
+    const route = this.remoteReserveRoutes.get(routeId);
+    this.remoteReserveRoutes.delete(routeId);
+    if (!route || route.sessionId !== context.sessionId || route.sessionKind !== context.sessionKind || route.expiresAt <= Date.now()) return { ok: true };
+
+    const remote = this.server?.sockets?.sockets?.get(route.socketId);
+    const remoteContext = remote ? this.context(remote) : null;
+    if (!remote || !remoteContext || remoteContext.kind !== 'remote' || remoteContext.state !== 'approved' || remoteContext.sessionId !== route.sessionId || remoteContext.sessionKind !== route.sessionKind) return { ok: true };
+
+    const responseData = { ...record };
+    delete responseData.remoteCommandRoute;
+    remote.emit('queueError', { event: 'queueError', data: responseData });
+    return { ok: true };
+  }
+
+  private pruneRemoteSearchRoutes(): void {
+    const now = Date.now();
+    for (const [routeId, route] of this.remoteSearchRoutes.entries()) {
+      if (route.expiresAt <= now) this.remoteSearchRoutes.delete(routeId);
+    }
+  }
+
+  private pruneRemoteReserveRoutes(): void {
+    const now = Date.now();
+    for (const [routeId, route] of this.remoteReserveRoutes.entries()) {
+      if (route.expiresAt <= now) this.remoteReserveRoutes.delete(routeId);
+    }
+  }
+
+  private removeRemoteSearchRoutesForSocket(socketId: string): void {
+    for (const [routeId, route] of this.remoteSearchRoutes.entries()) {
+      if (route.socketId === socketId) this.remoteSearchRoutes.delete(routeId);
+    }
+  }
+
+  private removeRemoteReserveRoutesForSocket(socketId: string): void {
+    for (const [routeId, route] of this.remoteReserveRoutes.entries()) {
+      if (route.socketId === socketId) this.remoteReserveRoutes.delete(routeId);
+    }
+  }
+
+  private removeRemoteSearchRoutesForSession(sessionId: string, sessionKind: RemoteSessionKind): void {
+    for (const [routeId, route] of this.remoteSearchRoutes.entries()) {
+      if (route.sessionId === sessionId && route.sessionKind === sessionKind) this.remoteSearchRoutes.delete(routeId);
+    }
+  }
+
+  private removeRemoteReserveRoutesForSession(sessionId: string, sessionKind: RemoteSessionKind): void {
+    for (const [routeId, route] of this.remoteReserveRoutes.entries()) {
+      if (route.sessionId === sessionId && route.sessionKind === sessionKind) this.remoteReserveRoutes.delete(routeId);
+    }
+  }
+
   private room(sessionId: string, sessionKind: RemoteSessionKind): string {
     return `${this.roomPrefix}${sessionKind}:${sessionId}`;
+  }
+
+  private accountRoom(userId: string): string {
+    return `account:library:${userId}`;
   }
 
   private sessionKey(
@@ -981,6 +1321,9 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private booleanField(value: unknown, field: string): boolean | null {
     const fieldValue = this.recordField(value)?.[field];
     return typeof fieldValue === 'boolean' ? fieldValue : null;
+  }
+  private safeIntegerField(value: unknown, minimum: number, maximum: number): boolean {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum && value <= maximum;
   }
   private recordField(value: unknown): UnknownRecord | null {
     return this.isRecord(value) ? value : null;

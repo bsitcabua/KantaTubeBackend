@@ -24,3 +24,10 @@ export interface KaraokeSessionTransferResponse {
   queue: KaraokeQueueItemResponse[];
   performers: string[];
 }
+
+export interface KaraokeGuestSessionClaimResponse {
+  session: KaraokeSessionResponse;
+  queue: KaraokeQueueItemResponse[];
+  performers: string[];
+  replacedSessionId: string | null;
+}

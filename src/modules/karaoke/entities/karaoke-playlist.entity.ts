@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { KaraokePlaylistItem } from './karaoke-playlist-item.entity';
+import { KaraokeLibraryVisibility } from '../karaoke-library-visibility';
 
 @Entity('karaoke_playlists')
 @Index('idx_karaoke_playlists_user_id', ['userId'])
@@ -33,6 +34,13 @@ export class KaraokePlaylist {
 
   @Column({ type: 'varchar', length: 500, nullable: true })
   description: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: KaraokeLibraryVisibility,
+    default: KaraokeLibraryVisibility.PRIVATE,
+  })
+  visibility: KaraokeLibraryVisibility;
 
   @CreateDateColumn({ name: 'created_at', type: 'datetime' })
   createdAt: Date;

@@ -53,7 +53,11 @@ export class KaraokeLibraryCacheService {
 
   invalidatePlaylist(userId: string, playlistId: string): void {
     this.deleteByPrefix(`playlists:${userId}:`);
+    // Detail keys include a scope segment (owner/public) before the id.
+    // Clear only this playlist in every supported scope.
     this.delete(`playlist:${userId}:${playlistId}`);
+    this.delete(`playlist:${userId}:owner:${playlistId}`);
+    this.delete(`playlist:${userId}:public:${playlistId}`);
   }
 
   size(): number {

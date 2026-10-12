@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { KaraokeSong } from './karaoke-song.entity';
+import { KaraokeLibraryVisibility } from '../karaoke-library-visibility';
 
 export enum KaraokeFavoriteSourceType {
   SONGBOOK = 'songbook',
@@ -31,6 +32,13 @@ export class KaraokeFavorite {
 
   @Column({ name: 'source_type', type: 'enum', enum: KaraokeFavoriteSourceType })
   sourceType: KaraokeFavoriteSourceType;
+
+  @Column({
+    type: 'enum',
+    enum: KaraokeLibraryVisibility,
+    default: KaraokeLibraryVisibility.PRIVATE,
+  })
+  visibility: KaraokeLibraryVisibility;
 
   @Column({ name: 'songbook_song_id', type: 'int', unsigned: true, nullable: true })
   songbookSongId: number | null;

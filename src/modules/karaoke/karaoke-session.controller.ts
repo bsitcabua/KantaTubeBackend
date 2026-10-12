@@ -48,6 +48,36 @@ export class KaraokeSessionController {
     return this.sessions.listActive(user.id);
   }
 
+  @Post('claim-guest')
+  @UseGuards(OriginGuard)
+  async claimGuest(
+    @CurrentUser() user: User,
+    @Body() body: {
+      sessionId?: unknown;
+      hostToken?: unknown;
+      clientId?: unknown;
+      queue?: unknown;
+      performers?: unknown;
+      alias?: unknown;
+      replaceSessionId?: unknown;
+    },
+  ) {
+    const result = await this.sessions.claimGuest(
+      user.id,
+      body?.sessionId,
+      body?.hostToken,
+      body?.clientId,
+      body?.queue,
+      body?.performers,
+      body?.alias,
+      body?.replaceSessionId,
+    );
+    if (result.replacedSessionId) {
+      await this.remoteAuthorization?.invalidateSession(result.replacedSessionId);
+    }
+    return result;
+  }
+
   /**
    * A browser on Vercel cannot rely on the Render session cookie during a
    * Socket.IO handshake. Issue a short-lived ticket only after the final,
@@ -203,6 +233,9 @@ export class KaraokeSessionController {
   ) {
     const result = await this.sessions.end(user.id, sessionId, body?.clientId);
     await this.remoteAuthorization?.invalidateSession(sessionId);
+    if (await this.remoteAuthorization?.isClaimedGuestSession(sessionId, user.id)) {
+      await this.remoteAuthorization?.invalidateSession(sessionId, undefined, 'guest');
+    }
     return result;
   }
 

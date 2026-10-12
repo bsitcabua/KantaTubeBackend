@@ -13,6 +13,7 @@ import {
   KaraokeSession,
   KaraokeSessionStatus,
 } from './entities/karaoke-session.entity';
+import { User, UserStatus } from '../users/entities/user.entity';
 import { KaraokePairingSession } from './entities/karaoke-pairing-session.entity';
 import {
   KaraokeRemoteGrant,
@@ -89,7 +90,23 @@ export class RemoteAuthorizationService {
     clientId?: unknown,
   ): Promise<PairingInvitation> {
     const session = await this.findActiveSession(ownerId, sessionId, clientId);
-    return this.issuePairingToken('karaoke', session.id);
+    const guestClaim = await this.hostSessions.findOne({
+      where: { id: session.id, claimedOwnerId: ownerId },
+    });
+    const keepGuestRoute = !!guestClaim &&
+      !guestClaim.revokedAt &&
+      guestClaim.expiresAt.getTime() > Date.now();
+    return this.issuePairingToken(keepGuestRoute ? 'guest' : 'karaoke', session.id);
+  }
+
+  async isClaimedGuestSession(
+    sessionId: string,
+    ownerId: string,
+  ): Promise<boolean> {
+    const host = await this.hostSessions.findOne({
+      where: { id: sessionId, claimedOwnerId: ownerId },
+    });
+    return !!host && !host.revokedAt && host.expiresAt.getTime() > Date.now();
   }
 
   async createGuestHost(): Promise<GuestHostInvitation> {
@@ -335,6 +352,34 @@ export class RemoteAuthorizationService {
     return grant;
   }
 
+  /**
+   * Authorize a Remote library request and bind it to the authenticated
+   * account that owns the karaoke session. Library data is still filtered to
+   * PUBLIC by the library controller after this capability is validated.
+   */
+  async authorizeLibraryAccess(
+    ownerId: string,
+    sessionId: string,
+    deviceId: string,
+    grantToken: unknown,
+  ): Promise<KaraokeRemoteGrant> {
+    const grant = await this.authorizeGrant(sessionId, deviceId, grantToken);
+    if (!grant.karaokeSessionId) {
+      throw this.remoteError(
+        'REMOTE_NOT_AUTHORIZED',
+        'Anonymous Remotes cannot access an account library.',
+      );
+    }
+    const session = await this.findActiveSessionById(grant.karaokeSessionId);
+    if (session.ownerId !== ownerId) {
+      throw this.remoteError(
+        'REMOTE_NOT_AUTHORIZED',
+        'This Remote is not connected to the current account.',
+      );
+    }
+    return grant;
+  }
+
   async assertGrantActive(
     sessionId: string,
     deviceId: string,
@@ -478,11 +523,42 @@ export class RemoteAuthorizationService {
     return activeSession;
   }
 
-  async findActiveSessionById(sessionId: string): Promise<KaraokeSession> {
-    const session = await this.sessions.findOne({ where: { id: sessionId } });
+  async findActiveSessionById(
+    sessionId: string,
+    includeOwner = false,
+  ): Promise<KaraokeSession> {
+    const session = await this.sessions.findOne({
+      where: { id: sessionId },
+      ...(includeOwner ? { relations: { owner: true } } : {}),
+    });
     if (!session)
       throw this.remoteError('SESSION_NOT_FOUND', 'Karaoke session not found.');
     return this.assertActiveSession(session);
+  }
+
+  async resolveLibraryOwner(
+    sessionId: string,
+    deviceId: string,
+    grantToken: unknown,
+  ): Promise<User> {
+    const grant = await this.authorizeGrant(sessionId, deviceId, grantToken);
+    if (!grant.karaokeSessionId) {
+      throw this.remoteError(
+        'REMOTE_NOT_AUTHORIZED',
+        'Anonymous Remotes cannot access an account library.',
+      );
+    }
+    const session = await this.findActiveSessionById(
+      grant.karaokeSessionId,
+      true,
+    );
+    if (!session.owner || session.owner.status !== UserStatus.ACTIVE) {
+      throw this.remoteError(
+        'REMOTE_NOT_AUTHORIZED',
+        'The account that owns this karaoke session is unavailable.',
+      );
+    }
+    return session.owner;
   }
 
   private async issuePairingToken(

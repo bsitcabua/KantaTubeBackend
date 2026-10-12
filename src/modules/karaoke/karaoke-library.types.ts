@@ -1,12 +1,16 @@
 import { KaraokeFavoriteSourceType } from './entities/karaoke-favorite.entity';
+import { KaraokeLibraryVisibility } from './karaoke-library-visibility';
 
 export interface FavoriteResponse {
   id: string;
   sourceType: KaraokeFavoriteSourceType;
+  visibility: KaraokeLibraryVisibility;
   songbookSongId: number | null;
   youtubeVideoId: string | null;
   title: string;
   artist: string | null;
+  language: string | null;
+  category: string | null;
   thumbnailUrl: string | null;
   createdAt: string;
   updatedAt: string;
@@ -29,6 +33,7 @@ export interface PlaylistSummaryResponse {
   thumbnailUrl: string | null;
   createdAt: string;
   updatedAt: string;
+  visibility: KaraokeLibraryVisibility;
 }
 
 export interface PlaylistItemResponse {
@@ -38,6 +43,8 @@ export interface PlaylistItemResponse {
   youtubeVideoId: string | null;
   title: string;
   artist: string | null;
+  language: string | null;
+  category: string | null;
   description: string | null;
   thumbnailUrl: string | null;
   position: number;
@@ -54,6 +61,7 @@ export interface PlaylistResponse {
   items: PlaylistItemResponse[];
   itemCount: number;
   thumbnailUrl: string | null;
+  visibility: KaraokeLibraryVisibility;
 }
 
 export interface PaginationResponse {

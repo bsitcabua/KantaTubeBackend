@@ -19,6 +19,8 @@ import { KaraokePlaylistItem } from './entities/karaoke-playlist-item.entity';
 import { KaraokeLibraryController } from './karaoke-library.controller';
 import { KaraokeLibraryService } from './karaoke-library.service';
 import { KaraokeLibraryCacheService } from './karaoke-library-cache.service';
+import { KaraokeLibraryEventsService } from './karaoke-library-events.service';
+import { KaraokeLibraryAuthGuard } from './guards/karaoke-library-auth.guard';
 
 @Module({
   imports: [
@@ -47,10 +49,13 @@ import { KaraokeLibraryCacheService } from './karaoke-library-cache.service';
     RemoteAuthorizationService,
     KaraokeLibraryService,
     KaraokeLibraryCacheService,
+    KaraokeLibraryEventsService,
+    KaraokeLibraryAuthGuard,
   ],
   exports: [
     KaraokeSessionService,
     RemoteAuthorizationService,
+    KaraokeLibraryEventsService,
   ],
 })
 export class KaraokeModule {}

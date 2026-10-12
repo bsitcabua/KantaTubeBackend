@@ -15,6 +15,7 @@ describe('SearchGateway', () => {
   };
   let authorization: {
     findActiveSession: jest.Mock;
+    isClaimedGuestSession: jest.Mock;
     authorizeGuestHost: jest.Mock;
     createPendingRemote: jest.Mock;
     approveRemote: jest.Mock;
@@ -35,6 +36,7 @@ describe('SearchGateway', () => {
     };
     authorization = {
       findActiveSession: jest.fn().mockResolvedValue({ id: sessionId }),
+      isClaimedGuestSession: jest.fn().mockResolvedValue(false),
       authorizeGuestHost: jest.fn().mockResolvedValue({ id: sessionId }),
       createPendingRemote: jest.fn().mockResolvedValue({
         sessionId,
@@ -93,12 +95,14 @@ describe('SearchGateway', () => {
     expect(authorization.findActiveSession).toHaveBeenCalledWith(
       'owner-id',
       sessionId,
+      '',
     );
     expect(main.join).toHaveBeenCalledWith(`karaoke:karaoke:${sessionId}`);
     expect(main.emit).toHaveBeenCalledWith('mainRegistered', {
       sessionId,
       sessionKind: 'karaoke',
     });
+    expect(main.emit).toHaveBeenCalledWith('activeRemoteCount', { count: 0 });
     expect(main.handshake.auth).not.toHaveProperty('role');
   });
 
@@ -110,8 +114,21 @@ describe('SearchGateway', () => {
 
     expect(auth.authenticateSocketTicket).toHaveBeenCalledWith('v1.ticket.signature', sessionId);
     expect(auth.authenticate).not.toHaveBeenCalled();
-    expect(authorization.findActiveSession).toHaveBeenCalledWith('owner-id', sessionId);
+    expect(authorization.findActiveSession).toHaveBeenCalledWith('owner-id', sessionId, '');
     expect(main.join).toHaveBeenCalledWith(`karaoke:karaoke:${sessionId}`);
+  });
+
+  it('keeps a claimed guest session on the guest remote route after login', async () => {
+    authorization.isClaimedGuestSession.mockResolvedValue(true);
+    const main = createClient({ sessionId }, 'claimed-guest-main-socket');
+
+    await gateway.handleConnection(main);
+
+    expect(main.join).toHaveBeenCalledWith(`karaoke:guest:${sessionId}`);
+    expect(main.emit).toHaveBeenCalledWith('mainRegistered', {
+      sessionId,
+      sessionKind: 'guest',
+    });
   });
 
   it('reports a rejected session-bound ticket without querying the karaoke session', async () => {
@@ -193,6 +210,28 @@ describe('SearchGateway', () => {
     expect(main.emit).not.toHaveBeenCalledWith('onSearch', expect.anything());
   });
 
+  it('reports only approved connected remotes in the active count', async () => {
+    const main = createClient({ sessionId }, 'main-socket');
+    const remote = createClient(
+      {
+        pairingToken: 'pairing-token-value-123456789012345678901234567890',
+        deviceId,
+      },
+      'remote-socket',
+    );
+
+    await gateway.handleConnection(main);
+    await gateway.handleConnection(remote);
+    expect(main.emit).toHaveBeenCalledWith('activeRemoteCount', { count: 0 });
+
+    await gateway.approveRemoteConnection(main, { requestId: grantId });
+    expect(main.emit).toHaveBeenCalledWith('activeRemoteCount', { count: 1 });
+
+    (remote as unknown as { connected: boolean }).connected = false;
+    gateway.handleDisconnect(remote);
+    expect(main.emit).toHaveBeenCalledWith('activeRemoteCount', { count: 0 });
+  });
+
   it('keeps different remote devices connected and replaces only the same device', async () => {
     const deviceB = '123e4567-e89b-42d3-a456-426614174003';
     authorization.createPendingRemote.mockImplementation(
@@ -264,16 +303,161 @@ describe('SearchGateway', () => {
     });
 
     expect(result).toEqual({ ok: true });
-    expect(main.emit).toHaveBeenCalledWith('onSearch', {
+    expect(main.emit).toHaveBeenCalledWith('onSearch', expect.objectContaining({
       event: 'onSearch',
-      data: { search: 'test' },
-    });
+      data: expect.objectContaining({ search: 'test', remoteSearchRoute: expect.any(String) }),
+    }));
     expect(authorization.assertGrantActive).toHaveBeenCalledWith(
       sessionId,
       deviceId,
       grantId,
       'karaoke',
     );
+  });
+
+  it('routes search results only to the requesting remote and drops unscoped search broadcasts', async () => {
+    const main = createClient({ sessionId }, 'main-socket');
+    const remote = createClient(
+      {
+        pairingToken: 'pairing-token-value-123456789012345678901234567890',
+        deviceId,
+      },
+      'remote-socket',
+    );
+    await gateway.handleConnection(main);
+    await gateway.handleConnection(remote);
+    await gateway.approveRemoteConnection(main, { requestId: grantId });
+    roomEmit.mockClear();
+
+    await gateway.onSearch(remote, {
+      event: 'onSearch',
+      data: { search: 'Adele', requestId: 'remote-a-1' },
+    });
+    const forwardedSearch = (main.emit as jest.Mock).mock.calls.find(([event]) => event === 'onSearch');
+    const route = forwardedSearch?.[1]?.data?.remoteSearchRoute;
+    expect(route).toEqual(expect.any(String));
+
+    const response = await gateway.searchResults(main, {
+      event: 'searchResults',
+      data: {
+        remoteSearchRoute: route,
+        requestId: 'remote-a-1',
+        searchResults: [],
+      },
+    });
+
+    expect(response).toEqual({ ok: true });
+    expect(remote.emit).toHaveBeenCalledWith('searchResults', {
+      event: 'searchResults',
+      data: { requestId: 'remote-a-1', searchResults: [] },
+    });
+    expect(roomEmit).not.toHaveBeenCalledWith('searchResults', expect.anything());
+
+    await gateway.searchResults(main, {
+      event: 'searchResults',
+      data: { searchResults: [] },
+    });
+    expect(roomEmit).not.toHaveBeenCalledWith('searchResults', expect.anything());
+  });
+
+  it('routes duplicate reservation warnings only to the requesting remote', async () => {
+    const main = createClient({ sessionId }, 'main-socket');
+    const remote = createClient(
+      {
+        pairingToken: 'pairing-token-value-123456789012345678901234567890',
+        deviceId,
+      },
+      'remote-socket',
+    );
+    await gateway.handleConnection(main);
+    await gateway.handleConnection(remote);
+    await gateway.approveRemoteConnection(main, { requestId: grantId });
+    roomEmit.mockClear();
+
+    const song = {
+      videoId: 'abc123',
+      title: 'A Little Respect',
+      description: 'Karaoke song',
+      thumbnails: 'https://example.com/thumb.jpg',
+      performer: 'ELVIN',
+    };
+    await gateway.reserveSong(remote, { event: 'reserveSong', data: song });
+    const forwardedReserve = (main.emit as jest.Mock).mock.calls.find(([event]) => event === 'reserveSong');
+    const route = forwardedReserve?.[1]?.data?.remoteCommandRoute;
+    expect(route).toEqual(expect.any(String));
+
+    const response = await gateway.queueDuplicateWarning(main, {
+      event: 'queueDuplicateWarning',
+      data: {
+        code: 'QUEUE_DUPLICATE',
+        remoteCommandRoute: route,
+        performer: 'ELVIN',
+        song,
+        searchSong: {
+          source: 'songbook',
+          artist: 'Erasure',
+          id: { videoId: 'abc123' },
+          snippet: {
+            title: 'A Little Respect',
+            description: 'Karaoke song',
+            thumbnails: { medium: { url: 'https://example.com/thumb.jpg' } },
+          },
+        },
+      },
+    });
+
+    expect(response).toEqual({ ok: true });
+    expect(remote.emit).toHaveBeenCalledWith('queueDuplicateWarning', {
+      event: 'queueDuplicateWarning',
+      data: expect.objectContaining({ code: 'QUEUE_DUPLICATE', performer: 'ELVIN' }),
+    });
+    expect(roomEmit).not.toHaveBeenCalledWith('queueDuplicateWarning', expect.anything());
+  });
+
+  it('routes a queue-full response only to the reserving remote when a reserve command is scoped', async () => {
+    const main = createClient({ sessionId }, 'main-socket');
+    const remote = createClient(
+      {
+        pairingToken: 'pairing-token-value-123456789012345678901234567890',
+        deviceId,
+      },
+      'remote-socket',
+    );
+    await gateway.handleConnection(main);
+    await gateway.handleConnection(remote);
+    await gateway.approveRemoteConnection(main, { requestId: grantId });
+    roomEmit.mockClear();
+
+    await gateway.reserveSong(remote, {
+      event: 'reserveSong',
+      data: {
+        videoId: 'abc123',
+        title: 'A Little Respect',
+        description: 'Karaoke song',
+        thumbnails: 'https://example.com/thumb.jpg',
+        performer: 'ELVIN',
+      },
+    });
+    const forwardedReserve = (main.emit as jest.Mock).mock.calls.find(([event]) => event === 'reserveSong');
+    const route = forwardedReserve?.[1]?.data?.remoteCommandRoute;
+    expect(route).toEqual(expect.any(String));
+
+    await gateway.queueError(main, {
+      event: 'queueError',
+      data: {
+        code: 'QUEUE_FULL',
+        message: 'Song reserve list is full (15/15).',
+        queueCount: 15,
+        maxQueueSize: 15,
+        remoteCommandRoute: route,
+      },
+    });
+
+    expect(remote.emit).toHaveBeenCalledWith('queueError', {
+      event: 'queueError',
+      data: expect.objectContaining({ code: 'QUEUE_FULL', queueCount: 15 }),
+    });
+    expect(roomEmit).not.toHaveBeenCalledWith('queueError', expect.anything());
   });
 
   it('forwards a typed queue-full response to remotes without treating it as disconnect', async () => {

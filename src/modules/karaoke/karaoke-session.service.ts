@@ -17,6 +17,7 @@ import {
   MoreThan,
   Repository,
 } from 'typeorm';
+import { createHash } from 'crypto';
 import { User, UserStatus } from '../users/entities/user.entity';
 import {
   KaraokeSession,
@@ -25,7 +26,9 @@ import {
 import { KaraokeSessionResponse } from './karaoke-session.types';
 import { KaraokeQueueItem } from './entities/karaoke-queue-item.entity';
 import { KaraokeSessionPerformer } from './entities/karaoke-session-performer.entity';
+import { KaraokeRemoteHostSession } from './entities/karaoke-remote-host-session.entity';
 import {
+  KaraokeGuestSessionClaimResponse,
   KaraokeQueueItemResponse,
   KaraokeSessionTransferResponse,
 } from './karaoke-session.types';
@@ -154,6 +157,142 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       order: { createdAt: 'ASC' },
     });
     return sessions.map((session) => this.toResponse(session));
+  }
+
+  /**
+   * Upgrade an anonymous host into an account-owned session in place. The
+   * guest host UUID becomes the karaoke session UUID, so queue identity and
+   * remote routing do not pass through a second session.
+   */
+  async claimGuest(
+    ownerId: string,
+    hostSessionIdInput: unknown,
+    hostTokenInput: unknown,
+    clientIdInput: unknown,
+    queueInput: unknown,
+    performersInput: unknown,
+    aliasInput?: unknown,
+    replaceSessionIdInput?: unknown,
+  ): Promise<KaraokeGuestSessionClaimResponse> {
+    const hostSessionId = this.requiredUuid(hostSessionIdInput, 'sessionId');
+    const hostToken = this.requiredToken(hostTokenInput, 'hostToken');
+    const clientId = this.normalizeClientId(clientIdInput);
+    if (!clientId) throw new BadRequestException('clientId must be a UUID.');
+    const queue = this.normalizeQueue(queueInput);
+    const performers = this.normalizePerformers(performersInput);
+    const alias = aliasInput === undefined
+      ? 'Karaoke session'
+      : this.normalizeAlias(aliasInput);
+    const replaceSessionId = replaceSessionIdInput === undefined || replaceSessionIdInput === null || replaceSessionIdInput === ''
+      ? null
+      : this.requiredUuid(replaceSessionIdInput, 'replaceSessionId');
+
+    return this.dataSource.transaction(async (manager) => {
+      const users = manager.getRepository(User);
+      const sessions = manager.getRepository(KaraokeSession);
+      const queueRepository = manager.getRepository(KaraokeQueueItem);
+      const performerRepository = manager.getRepository(KaraokeSessionPerformer);
+      const hosts = manager.getRepository(KaraokeRemoteHostSession);
+      const owner = await users.findOne({
+        where: { id: ownerId, status: UserStatus.ACTIVE },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!owner) throw new NotFoundException('User not found.');
+
+      const host = await hosts.findOne({
+        where: { id: hostSessionId, tokenHash: this.hash(hostToken) },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!host || host.revokedAt || host.expiresAt.getTime() <= Date.now()) {
+        throw new ConflictException({
+          code: 'guest_session_not_claimable',
+          message: 'This guest karaoke session is no longer available.',
+        });
+      }
+
+      const existing = await sessions.findOne({
+        where: { id: hostSessionId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (host.claimedOwnerId) {
+        if (host.claimedOwnerId !== ownerId || !existing) {
+          throw new ConflictException({
+            code: 'guest_session_not_claimable',
+            message: 'This guest karaoke session belongs to another account.',
+          });
+        }
+        this.assertActive(existing);
+        this.assertClientOwnership(existing, clientId, false, false);
+        return this.readClaimResponse(existing, queueRepository, performerRepository, null);
+      }
+
+      const now = new Date();
+      await this.expireStaleWithManager(manager, ownerId, undefined, now);
+      const activeCount = await sessions.count({
+        where: {
+          ownerId,
+          status: KaraokeSessionStatus.ACTIVE,
+          leaseExpiresAt: MoreThan(now),
+        },
+      });
+      if (activeCount >= this.maxActiveSessions && !replaceSessionId) {
+        throw this.sessionLimitException();
+      }
+
+      let replacedSessionId: string | null = null;
+      if (replaceSessionId) {
+        if (replaceSessionId === hostSessionId) {
+          throw new BadRequestException('replaceSessionId must be different from the guest session.');
+        }
+        const replace = await sessions.findOne({
+          where: { id: replaceSessionId, ownerId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        this.assertActive(replace);
+        replace.status = KaraokeSessionStatus.ENDED;
+        replace.endedAt = now;
+        await sessions.save(replace);
+        await queueRepository.delete({ sessionId: replace.id });
+        await performerRepository.delete({ sessionId: replace.id });
+        replacedSessionId = replace.id;
+      }
+
+      if (existing) {
+        throw new ConflictException({
+          code: 'guest_session_not_claimable',
+          message: 'This guest karaoke session has already been claimed.',
+        });
+      }
+
+      const claimed = sessions.create({
+        id: hostSessionId,
+        ownerId,
+        alias,
+        status: KaraokeSessionStatus.ACTIVE,
+        lastHeartbeatAt: now,
+        leaseExpiresAt: this.nextLease(now),
+        clientId,
+        endedAt: null,
+      });
+      const saved = await sessions.save(claimed);
+      const savedQueue = queue.length
+        ? await queueRepository.save(queue.map((item, position) => queueRepository.create({ ...item, sessionId: saved.id, position })))
+        : [];
+      const savedPerformers = performers.length
+        ? await performerRepository.save(performers.map((name, position) => performerRepository.create({ sessionId: saved.id, position, name })))
+        : [];
+
+      host.claimedOwnerId = ownerId;
+      host.claimedAt = now;
+      await hosts.save(host);
+
+      return {
+        session: this.toResponse(saved),
+        queue: savedQueue.map((item) => this.toQueueResponse(item)),
+        performers: savedPerformers.sort((left, right) => left.position - right.position).map((performer) => performer.name),
+        replacedSessionId,
+      };
+    });
   }
 
   async get(
@@ -498,6 +637,28 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     return new Date(now.getTime() + this.leaseMs);
   }
 
+  private async readClaimResponse(
+    session: KaraokeSession,
+    queueRepository: Repository<KaraokeQueueItem>,
+    performerRepository: Repository<KaraokeSessionPerformer>,
+    replacedSessionId: string | null,
+  ): Promise<KaraokeGuestSessionClaimResponse> {
+    const queue = await queueRepository.find({
+      where: { sessionId: session.id },
+      order: { position: 'ASC' },
+    });
+    const performers = await performerRepository.find({
+      where: { sessionId: session.id },
+      order: { position: 'ASC' },
+    });
+    return {
+      session: this.toResponse(session),
+      queue: queue.map((item) => this.toQueueResponse(item)),
+      performers: performers.map((performer) => performer.name),
+      replacedSessionId,
+    };
+  }
+
   private assertActive(
     session: KaraokeSession | null,
   ): asserts session is KaraokeSession {
@@ -559,6 +720,27 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('clientId must be a UUID.');
     }
     return clientId;
+  }
+
+  private requiredUuid(input: unknown, field: string): string {
+    if (
+      typeof input !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.trim())
+    ) {
+      throw new BadRequestException(`${field} must be a UUID.`);
+    }
+    return input.trim();
+  }
+
+  private requiredToken(input: unknown, field: string): string {
+    if (
+      typeof input !== 'string' ||
+      input.trim().length < 32 ||
+      input.trim().length > 200
+    ) {
+      throw new BadRequestException(`${field} is invalid.`);
+    }
+    return input.trim();
   }
 
   private normalizeQueue(input: unknown): KaraokeQueueItemResponse[] {
@@ -641,6 +823,10 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException(`Queue item ${field} is invalid.`);
     }
     return value.trim();
+  }
+
+  private hash(value: string): string {
+    return createHash('sha256').update(value).digest('hex');
   }
 
   private normalizeAlias(value: unknown): string {

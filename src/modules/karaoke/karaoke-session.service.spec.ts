@@ -8,6 +8,7 @@ import {
 } from './entities/karaoke-session.entity';
 import { KaraokeQueueItem } from './entities/karaoke-queue-item.entity';
 import { KaraokeSessionPerformer } from './entities/karaoke-session-performer.entity';
+import { KaraokeRemoteHostSession } from './entities/karaoke-remote-host-session.entity';
 import { KaraokeSessionService } from './karaoke-session.service';
 
 describe('KaraokeSessionService', () => {
@@ -441,5 +442,103 @@ describe('KaraokeSessionService', () => {
     expect(queueRepository.delete).toHaveBeenCalledWith({
       sessionId: expect.anything(),
     });
+  });
+
+  it('claims a guest host in place and is idempotent on a repeated callback', async () => {
+    const guestId = '123e4567-e89b-42d3-a456-426614174099';
+    const host = {
+      id: guestId,
+      tokenHash: 'unused-in-test',
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      claimedOwnerId: null,
+      claimedAt: null,
+    };
+    const guestQueue = {
+      sessionId: guestId,
+      position: 0,
+      videoId: 'dQw4w9WgXcQ',
+      title: 'A Little Respect',
+      description: 'Karaoke',
+      thumbnails: 'https://i.ytimg.com/test.jpg',
+      performer: 'ELVIN',
+    } as KaraokeQueueItem;
+    const guestPerformer = { sessionId: guestId, position: 0, name: 'ELVIN' };
+    let claimedSession: KaraokeSession | undefined;
+    const userRepository = {
+      findOne: jest.fn().mockResolvedValue({ id: ownerId }),
+    };
+    const sessionRepository = {
+      find: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
+      findOne: jest.fn().mockImplementation(async () => claimedSession),
+      create: jest.fn((value) => value),
+      save: jest.fn(async (value) => {
+        claimedSession = value as KaraokeSession;
+        return claimedSession;
+      }),
+    };
+    const queueRepository = {
+      find: jest.fn().mockResolvedValue([guestQueue]),
+      create: jest.fn((value) => value),
+      save: jest.fn(async (values) => values),
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    const performerRepository = {
+      find: jest.fn().mockResolvedValue([guestPerformer]),
+      create: jest.fn((value) => value),
+      save: jest.fn(async (values) => values),
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    const hostRepository = {
+      findOne: jest.fn().mockResolvedValue(host),
+      save: jest.fn(async (value) => value),
+    };
+    const manager = {
+      getRepository: jest.fn((entity: unknown) => {
+        if (entity === User) return userRepository;
+        if (entity === KaraokeSession) return sessionRepository;
+        if (entity === KaraokeSessionPerformer) return performerRepository;
+        if (entity === KaraokeRemoteHostSession) return hostRepository;
+        return queueRepository;
+      }),
+    };
+    const dataSource = {
+      transaction: jest.fn((work) => work(manager)),
+    } as unknown as DataSource;
+    const { service } = createService({ dataSource });
+    const input = {
+      videoId: guestQueue.videoId,
+      title: guestQueue.title,
+      description: guestQueue.description,
+      thumbnails: guestQueue.thumbnails,
+      performer: guestQueue.performer,
+    };
+    const token = 'guest-host-token-123456789012345678901234567890';
+
+    const first = await service.claimGuest(
+      ownerId,
+      guestId,
+      token,
+      '123e4567-e89b-42d3-a456-426614174001',
+      [input],
+      ['ELVIN'],
+    );
+    const second = await service.claimGuest(
+      ownerId,
+      guestId,
+      token,
+      '123e4567-e89b-42d3-a456-426614174001',
+      [input],
+      ['ELVIN'],
+    );
+
+    expect(first.session.id).toBe(guestId);
+    expect(first.queue.map((song) => song.videoId)).toEqual([guestQueue.videoId]);
+    expect(first.performers).toEqual(['ELVIN']);
+    expect(second.session.id).toBe(guestId);
+    expect(sessionRepository.save).toHaveBeenCalledTimes(1);
+    expect(queueRepository.save).toHaveBeenCalledTimes(1);
+    expect(host.claimedOwnerId).toBe(ownerId);
   });
 });

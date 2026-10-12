@@ -1,5 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { KaraokeFavoriteSourceType } from './entities/karaoke-favorite.entity';
+import {
+  KaraokeLibraryVisibility,
+  normalizeKaraokeLibraryVisibility,
+} from './karaoke-library-visibility';
 
 export interface FavoriteInput {
   sourceType: KaraokeFavoriteSourceType;
@@ -13,6 +17,11 @@ export interface FavoriteInput {
 export interface PlaylistInput {
   name: string;
   description?: string;
+  visibility?: KaraokeLibraryVisibility;
+}
+
+export interface VisibilityInput {
+  visibility: KaraokeLibraryVisibility;
 }
 
 export interface PlaylistItemInput extends FavoriteInput {
@@ -50,7 +59,19 @@ export function parsePlaylistInput(value: unknown): PlaylistInput {
     ...(input.description !== undefined
       ? { description: parseNullableText(input.description, 500, 'description') ?? undefined }
       : {}),
+    visibility: normalizeKaraokeLibraryVisibility(input.visibility),
   };
+}
+
+export function parseVisibilityInput(value: unknown): VisibilityInput {
+  if (!value || typeof value !== 'object') {
+    throw new BadRequestException('Visibility payload must be an object.');
+  }
+  const visibility = (value as Record<string, unknown>).visibility;
+  if (visibility !== KaraokeLibraryVisibility.PRIVATE && visibility !== KaraokeLibraryVisibility.PUBLIC) {
+    throw new BadRequestException('visibility must be private or public.');
+  }
+  return { visibility };
 }
 
 export function parsePlaylistItemInput(value: unknown): PlaylistItemInput {
