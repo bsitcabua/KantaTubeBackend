@@ -364,14 +364,8 @@ export class RemoteAuthorizationService {
     grantToken: unknown,
   ): Promise<KaraokeRemoteGrant> {
     const grant = await this.authorizeGrant(sessionId, deviceId, grantToken);
-    if (!grant.karaokeSessionId) {
-      throw this.remoteError(
-        'REMOTE_NOT_AUTHORIZED',
-        'Anonymous Remotes cannot access an account library.',
-      );
-    }
-    const session = await this.findActiveSessionById(grant.karaokeSessionId);
-    if (session.ownerId !== ownerId) {
+    const libraryOwner = await this.resolveLibraryOwnerFromGrant(grant);
+    if (!libraryOwner || libraryOwner.id !== ownerId) {
       throw this.remoteError(
         'REMOTE_NOT_AUTHORIZED',
         'This Remote is not connected to the current account.',
@@ -542,23 +536,76 @@ export class RemoteAuthorizationService {
     grantToken: unknown,
   ): Promise<User> {
     const grant = await this.authorizeGrant(sessionId, deviceId, grantToken);
-    if (!grant.karaokeSessionId) {
+    const owner = await this.resolveLibraryOwnerFromGrant(grant);
+    if (!owner) {
       throw this.remoteError(
         'REMOTE_NOT_AUTHORIZED',
         'Anonymous Remotes cannot access an account library.',
       );
     }
-    const session = await this.findActiveSessionById(
-      grant.karaokeSessionId,
-      true,
-    );
-    if (!session.owner || session.owner.status !== UserStatus.ACTIVE) {
-      throw this.remoteError(
-        'REMOTE_NOT_AUTHORIZED',
-        'The account that owns this karaoke session is unavailable.',
+    return owner;
+  }
+
+  /**
+   * A claimed anonymous host keeps the guest socket route so existing queue
+   * connections are not moved. Once claimed, however, its UUID is also the
+   * active KaraokeSession UUID and its owner may share PUBLIC library data.
+   * An unclaimed anonymous host intentionally returns null.
+   */
+  async getClaimedGuestOwnerId(sessionId: string): Promise<string | null> {
+    const owner = await this.resolveClaimedGuestOwner(sessionId);
+    return owner?.id ?? null;
+  }
+
+  private async resolveLibraryOwnerFromGrant(
+    grant: KaraokeRemoteGrant,
+  ): Promise<User | null> {
+    if (grant.karaokeSessionId) {
+      const session = await this.findActiveSessionById(
+        grant.karaokeSessionId,
+        true,
       );
+      if (!session.owner || session.owner.status !== UserStatus.ACTIVE) {
+        return null;
+      }
+      return session.owner;
     }
-    return session.owner;
+
+    if (grant.remoteHostSessionId) {
+      return this.resolveClaimedGuestOwner(grant.remoteHostSessionId);
+    }
+
+    return null;
+  }
+
+  private async resolveClaimedGuestOwner(
+    hostSessionId: string,
+  ): Promise<User | null> {
+    const host = await this.hostSessions.findOne({
+      where: { id: hostSessionId },
+    });
+    if (
+      !host?.claimedOwnerId ||
+      host.revokedAt ||
+      host.expiresAt.getTime() <= Date.now()
+    ) {
+      return null;
+    }
+
+    try {
+      const session = await this.findActiveSessionById(hostSessionId, true);
+      if (
+        session.ownerId !== host.claimedOwnerId ||
+        !session.owner ||
+        session.owner.status !== UserStatus.ACTIVE
+      ) {
+        return null;
+      }
+      return session.owner;
+    } catch {
+      // No KaraokeSession exists for a genuinely anonymous host.
+      return null;
+    }
   }
 
   private async issuePairingToken(

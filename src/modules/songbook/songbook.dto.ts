@@ -7,6 +7,8 @@ export const SONGBOOK_MAX_PAGE = 100_000;
 export const SONGBOOK_MAX_QUERY_LENGTH = 100;
 export const SONGBOOK_MAX_FILTER_LENGTH = 60;
 export const SONGBOOK_MAX_ARTIST_LENGTH = 255;
+export const SONGBOOK_RECOMMENDATIONS_LIMIT = 20;
+export const SONGBOOK_RECOMMENDATIONS_MAX_EXCLUSIONS = 200;
 
 export type SongbookBrowseMode = 'songs' | 'artists';
 export type SongbookBrowseLetter = string;
@@ -74,6 +76,30 @@ export function parseSongbookId(value: unknown): number {
   return id;
 }
 
+export function parseSongbookRecommendationExclusions(
+  value: unknown,
+): string[] {
+  if (value === undefined || value === null || value === '') return [];
+  if (typeof value !== 'string') throw invalidRecommendationExclusions();
+
+  const exclusions = [
+    ...new Set(
+      value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (
+    exclusions.length > SONGBOOK_RECOMMENDATIONS_MAX_EXCLUSIONS ||
+    exclusions.some((videoId) => !/^[A-Za-z0-9_-]{1,11}$/.test(videoId))
+  ) {
+    throw invalidRecommendationExclusions();
+  }
+
+  return exclusions;
+}
+
 function parseOptionalQuery(value: unknown): string | undefined {
   if (value === undefined || value === null || value === '') {
     return undefined;
@@ -125,7 +151,8 @@ function parseBrowseLetter(value: unknown): SongbookBrowseLetter | undefined {
   if (typeof value !== 'string') throw invalidBrowseLetter();
 
   const normalized = value.trim().toUpperCase();
-  if (!/^[A-Z]$/.test(normalized) && normalized !== '#') throw invalidBrowseLetter();
+  if (!/^[A-Z]$/.test(normalized) && normalized !== '#')
+    throw invalidBrowseLetter();
   return normalized;
 }
 
@@ -134,7 +161,8 @@ function parseOptionalArtist(value: unknown): string | undefined {
   if (typeof value !== 'string') throw invalidArtist();
 
   const normalized = value.trim().replace(/\s+/g, ' ');
-  if (!normalized || normalized.length > SONGBOOK_MAX_ARTIST_LENGTH) throw invalidArtist();
+  if (!normalized || normalized.length > SONGBOOK_MAX_ARTIST_LENGTH)
+    throw invalidArtist();
   return normalized;
 }
 
@@ -184,6 +212,14 @@ function invalidArtist(): BadRequestException {
   return new BadRequestException({
     code: 'invalid_songbook_artist',
     message: `artist must be ${SONGBOOK_MAX_ARTIST_LENGTH} characters or fewer.`,
+  });
+}
+
+function invalidRecommendationExclusions(): BadRequestException {
+  return new BadRequestException({
+    code: 'invalid_songbook_recommendation_exclusions',
+    message:
+      'Recommendation exclusions must contain at most 200 valid YouTube video IDs.',
   });
 }
 

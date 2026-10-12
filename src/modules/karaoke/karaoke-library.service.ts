@@ -9,6 +9,7 @@ import {
   DataSource,
   In,
   Like,
+  Not,
   Repository,
 } from 'typeorm';
 import { KaraokeSong } from './entities/karaoke-song.entity';
@@ -57,6 +58,23 @@ export class KaraokeLibraryService {
     const cached = this.cache.get<FavoritesListResponse>(cacheKey);
     if (cached) return cached;
 
+    // Favorites are shared as one collection. Treat a mixed/legacy state as
+    // private until Main explicitly makes the whole collection public; never
+    // leak only the rows that happen to be marked PUBLIC.
+    if (publicOnly) {
+      const privateCount = await this.favorites.count({
+        where: { userId, visibility: Not(KaraokeLibraryVisibility.PUBLIC) },
+      });
+      if (privateCount > 0) {
+        const response: FavoritesListResponse = {
+          data: [],
+          pagination: this.toPagination(page, limit, 0),
+        };
+        this.cache.set(cacheKey, response);
+        return response;
+      }
+    }
+
     const query = this.favorites
       .createQueryBuilder('favorite')
       .leftJoinAndSelect('favorite.songbookSong', 'songbookSong')
@@ -82,7 +100,14 @@ export class KaraokeLibraryService {
     if (existing) throw new ConflictException({ code: 'favorite_already_exists', message: 'This song is already in Favorites.' });
 
     try {
-      const favorite = this.favorites.create({ userId, ...materialized });
+      const existingFavorites = await this.favorites.count({ where: { userId } });
+      const privateFavorites = existingFavorites > 0
+        ? await this.favorites.count({ where: { userId, visibility: Not(KaraokeLibraryVisibility.PUBLIC) } })
+        : 0;
+      const collectionVisibility = existingFavorites > 0 && privateFavorites === 0
+        ? KaraokeLibraryVisibility.PUBLIC
+        : KaraokeLibraryVisibility.PRIVATE;
+      const favorite = this.favorites.create({ userId, ...materialized, visibility: collectionVisibility });
       const saved = await this.favorites.save(favorite);
       this.cache.deleteByPrefix(`favorites:${userId}:`);
       this.events.publish({ userId, resource: 'favorites', type: 'favorite-created', resourceId: saved.id });
@@ -111,11 +136,12 @@ export class KaraokeLibraryService {
       relations: { songbookSong: true },
     });
     if (!favorite) throw new NotFoundException('Favorite not found.');
-    favorite.visibility = normalizeKaraokeLibraryVisibility(visibility);
-    const saved = await this.favorites.save(favorite);
+    const normalizedVisibility = normalizeKaraokeLibraryVisibility(visibility);
+    await this.favorites.update({ userId }, { visibility: normalizedVisibility });
+    favorite.visibility = normalizedVisibility;
     this.cache.deleteByPrefix(`favorites:${userId}:`);
-    this.events.publish({ userId, resource: 'favorites', type: 'favorite-visibility-changed', resourceId: saved.id });
-    return this.toFavoriteResponse(saved);
+    this.events.publish({ userId, resource: 'favorites', type: 'favorite-visibility-changed' });
+    return this.toFavoriteResponse(favorite);
   }
 
   async setAllFavoriteVisibility(

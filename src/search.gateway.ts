@@ -187,10 +187,12 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private handleLibraryChanged(change: KaraokeLibraryChange): void {
+    // Remotes refresh their server-filtered public library after every change;
+    // they do not need a library resource id. Omitting it also prevents a
+    // playlist/favorite id from being exposed in a realtime payload when a
+    // previously public resource becomes private.
     this.server?.to(this.accountRoom(change.userId)).emit('accountLibraryChanged', {
       resource: change.resource,
-      type: change.type,
-      resourceId: change.resourceId,
       version: change.version,
     });
   }
@@ -258,6 +260,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         sessionKind: context.sessionKind,
         deviceId: approved.grant.deviceId,
         grantId: approved.grant.id,
+        accountId: context.ownerId,
         state: 'approved',
       } satisfies RemoteContext;
       await remote.join(this.room(context.sessionId, context.sessionKind));
@@ -653,7 +656,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
           grant.karaokeSessionId,
           true,
         )).ownerId
-      : undefined;
+      : await this.authorization().getClaimedGuestOwnerId?.(sessionId);
     this.disconnectDuplicateRemote(client, deviceId, sessionId, sessionKind);
     client.data.kantaTube = {
       kind: 'remote',
