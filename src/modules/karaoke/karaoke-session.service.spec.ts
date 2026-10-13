@@ -7,6 +7,8 @@ import {
   KaraokeSessionStatus,
 } from './entities/karaoke-session.entity';
 import { KaraokeQueueItem } from './entities/karaoke-queue-item.entity';
+import { KaraokeSessionPerformer } from './entities/karaoke-session-performer.entity';
+import { KaraokeRemoteHostSession } from './entities/karaoke-remote-host-session.entity';
 import { KaraokeSessionService } from './karaoke-session.service';
 
 describe('KaraokeSessionService', () => {
@@ -33,6 +35,7 @@ describe('KaraokeSessionService', () => {
     dataSource?: Partial<DataSource>;
     repository?: Partial<Repository<KaraokeSession>>;
     leaseSeconds?: string;
+    maxActiveSessions?: string;
   }) {
     const repository = {
       update: jest.fn().mockResolvedValue({ affected: 0 }),
@@ -41,7 +44,11 @@ describe('KaraokeSessionService', () => {
       ...options?.repository,
     } as unknown as Repository<KaraokeSession>;
     const config = {
-      get: jest.fn(() => options?.leaseSeconds),
+      get: jest.fn((key: string) =>
+        key === 'MAX_ACTIVE_SESSIONS'
+          ? options?.maxActiveSessions
+          : options?.leaseSeconds,
+      ),
     } as unknown as ConfigService;
     const dataSource = options?.dataSource as DataSource;
     const queueRepository = {} as Repository<KaraokeQueueItem>;
@@ -105,7 +112,7 @@ describe('KaraokeSessionService', () => {
         }
       }),
     } as unknown as DataSource;
-    const { service } = createService({ dataSource });
+    const { service } = createService({ dataSource, maxActiveSessions: '2' });
 
     const results = await Promise.allSettled([
       service.create(ownerId, 'Living Room'),
@@ -180,6 +187,47 @@ describe('KaraokeSessionService', () => {
     });
   });
 
+  it('rejects the previous client after a session is taken over', async () => {
+    const previousClientId = '123e4567-e89b-42d3-a456-426614174002';
+    const newClientId = '123e4567-e89b-42d3-a456-426614174003';
+    const existing = session({ clientId: previousClientId });
+    const transactionRepository = {
+      findOne: jest.fn().mockResolvedValue(existing),
+      save: jest.fn(async (value) => ({ ...value, updatedAt: new Date() })),
+    };
+    const dataSource = {
+      transaction: jest.fn((work) =>
+        work({
+          getRepository: (entity: unknown) =>
+            entity === KaraokeSession
+              ? transactionRepository
+              : { delete: jest.fn().mockResolvedValue({ affected: 0 }) },
+        }),
+      ),
+    } as unknown as DataSource;
+    const { service } = createService({ dataSource });
+
+    await expect(
+      service.heartbeat(ownerId, sessionId, newClientId),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'karaoke_session_taken_over',
+      }),
+    });
+
+    const result = await service.heartbeat(
+      ownerId,
+      sessionId,
+      newClientId,
+      true,
+    );
+
+    expect(result).toEqual(expect.objectContaining({ id: sessionId }));
+    expect(transactionRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: newClientId }),
+    );
+  });
+
   it('expires a session instead of reviving an elapsed lease', async () => {
     const existing = session({
       leaseExpiresAt: new Date(Date.now() - 1_000),
@@ -220,11 +268,18 @@ describe('KaraokeSessionService', () => {
       save: jest.fn(async (value) => value),
     };
     const queueRepository = { delete: jest.fn().mockResolvedValue({ affected: 1 }) };
+    const performerRepository = {
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
     const dataSource = {
       transaction: jest.fn((work) =>
         work({
           getRepository: (entity: unknown) =>
-            entity === KaraokeSession ? transactionRepository : queueRepository,
+            entity === KaraokeSession
+              ? transactionRepository
+              : entity === KaraokeSessionPerformer
+                ? performerRepository
+                : queueRepository,
         }),
       ),
     } as unknown as DataSource;
@@ -237,6 +292,7 @@ describe('KaraokeSessionService', () => {
     expect(repeated.status).toBe(KaraokeSessionStatus.ENDED);
     expect(transactionRepository.save).toHaveBeenCalledTimes(1);
     expect(queueRepository.delete).toHaveBeenCalledTimes(2);
+    expect(performerRepository.delete).toHaveBeenCalledTimes(2);
   });
 
   it('replaces an active session queue atomically', async () => {
@@ -315,12 +371,22 @@ describe('KaraokeSessionService', () => {
       save: jest.fn(async (values) => values),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
     };
+    const performerRepository = {
+      find: jest.fn().mockResolvedValue([
+        { sessionId, position: 0, name: 'ELVIN' },
+        { sessionId, position: 1, name: 'GERSON' },
+      ]),
+      create: jest.fn((value) => value),
+      save: jest.fn(async (values) => values),
+      delete: jest.fn().mockResolvedValue({ affected: 2 }),
+    };
     const dataSource = {
       transaction: jest.fn((work) =>
         work({
           getRepository: (entity: unknown) => {
             if (entity === User) return userRepository;
             if (entity === KaraokeSession) return sessionRepository;
+            if (entity === KaraokeSessionPerformer) return performerRepository;
             return queueRepository;
           },
         }),
@@ -337,6 +403,11 @@ describe('KaraokeSessionService', () => {
       videoId: 'dQw4w9WgXcQ',
       title: 'Transferred Karaoke',
     });
+    expect(result.performers).toEqual(['ELVIN', 'GERSON']);
+    expect(performerRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'replacement-session', name: 'ELVIN' }),
+    );
+    expect(performerRepository.delete).toHaveBeenCalledWith({ sessionId });
     expect(queueRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 'replacement-session' }),
     );
@@ -371,5 +442,103 @@ describe('KaraokeSessionService', () => {
     expect(queueRepository.delete).toHaveBeenCalledWith({
       sessionId: expect.anything(),
     });
+  });
+
+  it('claims a guest host in place and is idempotent on a repeated callback', async () => {
+    const guestId = '123e4567-e89b-42d3-a456-426614174099';
+    const host = {
+      id: guestId,
+      tokenHash: 'unused-in-test',
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      claimedOwnerId: null,
+      claimedAt: null,
+    };
+    const guestQueue = {
+      sessionId: guestId,
+      position: 0,
+      videoId: 'dQw4w9WgXcQ',
+      title: 'A Little Respect',
+      description: 'Karaoke',
+      thumbnails: 'https://i.ytimg.com/test.jpg',
+      performer: 'ELVIN',
+    } as KaraokeQueueItem;
+    const guestPerformer = { sessionId: guestId, position: 0, name: 'ELVIN' };
+    let claimedSession: KaraokeSession | undefined;
+    const userRepository = {
+      findOne: jest.fn().mockResolvedValue({ id: ownerId }),
+    };
+    const sessionRepository = {
+      find: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
+      findOne: jest.fn().mockImplementation(async () => claimedSession),
+      create: jest.fn((value) => value),
+      save: jest.fn(async (value) => {
+        claimedSession = value as KaraokeSession;
+        return claimedSession;
+      }),
+    };
+    const queueRepository = {
+      find: jest.fn().mockResolvedValue([guestQueue]),
+      create: jest.fn((value) => value),
+      save: jest.fn(async (values) => values),
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    const performerRepository = {
+      find: jest.fn().mockResolvedValue([guestPerformer]),
+      create: jest.fn((value) => value),
+      save: jest.fn(async (values) => values),
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    const hostRepository = {
+      findOne: jest.fn().mockResolvedValue(host),
+      save: jest.fn(async (value) => value),
+    };
+    const manager = {
+      getRepository: jest.fn((entity: unknown) => {
+        if (entity === User) return userRepository;
+        if (entity === KaraokeSession) return sessionRepository;
+        if (entity === KaraokeSessionPerformer) return performerRepository;
+        if (entity === KaraokeRemoteHostSession) return hostRepository;
+        return queueRepository;
+      }),
+    };
+    const dataSource = {
+      transaction: jest.fn((work) => work(manager)),
+    } as unknown as DataSource;
+    const { service } = createService({ dataSource });
+    const input = {
+      videoId: guestQueue.videoId,
+      title: guestQueue.title,
+      description: guestQueue.description,
+      thumbnails: guestQueue.thumbnails,
+      performer: guestQueue.performer,
+    };
+    const token = 'guest-host-token-123456789012345678901234567890';
+
+    const first = await service.claimGuest(
+      ownerId,
+      guestId,
+      token,
+      '123e4567-e89b-42d3-a456-426614174001',
+      [input],
+      ['ELVIN'],
+    );
+    const second = await service.claimGuest(
+      ownerId,
+      guestId,
+      token,
+      '123e4567-e89b-42d3-a456-426614174001',
+      [input],
+      ['ELVIN'],
+    );
+
+    expect(first.session.id).toBe(guestId);
+    expect(first.queue.map((song) => song.videoId)).toEqual([guestQueue.videoId]);
+    expect(first.performers).toEqual(['ELVIN']);
+    expect(second.session.id).toBe(guestId);
+    expect(sessionRepository.save).toHaveBeenCalledTimes(1);
+    expect(queueRepository.save).toHaveBeenCalledTimes(1);
+    expect(host.claimedOwnerId).toBe(ownerId);
   });
 });

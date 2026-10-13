@@ -55,6 +55,9 @@ export class KaraokeRemoteGrant {
   @Column({ type: 'char', length: 36 })
   deviceId: string;
 
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  displayName: string | null;
+
   @Column({ type: 'varchar', length: 100 })
   deviceLabel: string;
 

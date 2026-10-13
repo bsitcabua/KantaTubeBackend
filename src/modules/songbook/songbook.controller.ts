@@ -1,8 +1,17 @@
-import { Controller, Get, Headers, Param, Query, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Header,
+  Headers,
+  Param,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { Request } from 'express';
 import { RateLimiterService } from '../../common/rate-limit/rate-limiter.service';
 import {
   parseSongbookId,
+  parseSongbookRecommendationExclusions,
   parseSongbookSearchRequest,
 } from './songbook.dto';
 import { SongbookService } from './songbook.service';
@@ -27,9 +36,7 @@ export class SongbookController {
     @Headers('x-kantatube-visitor-id') visitorId: unknown,
     @Req() request: Request,
   ) {
-    this.rateLimiter.checkSongbookSearch(
-      this.getClientId(request, visitorId),
-    );
+    this.rateLimiter.checkSongbookSearch(this.getClientId(request, visitorId));
     const searchRequest = parseSongbookSearchRequest(
       query,
       language,
@@ -48,6 +55,21 @@ export class SongbookController {
   @Get('filters')
   filters() {
     return this.songbook.filters();
+  }
+
+  @Get('recommendations')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate')
+  recommendations(
+    @Query('exclude') exclude: unknown,
+    @Headers('x-kantatube-visitor-id') visitorId: unknown,
+    @Req() request: Request,
+  ) {
+    this.rateLimiter.checkSongbookRecommendations(
+      this.getClientId(request, visitorId),
+    );
+    return this.songbook.recommendations(
+      parseSongbookRecommendationExclusions(exclude),
+    );
   }
 
   @Get(':id')

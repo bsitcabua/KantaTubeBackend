@@ -1,0 +1,56 @@
+aa9f0f3ee3a098b89623f77f386c38bc
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.OAuthLoginAttempt = void 0;
+const typeorm_1 = require("typeorm");
+const auth_account_entity_1 = require("./auth-account.entity");
+let OAuthLoginAttempt = class OAuthLoginAttempt {
+};
+exports.OAuthLoginAttempt = OAuthLoginAttempt;
+__decorate([
+    (0, typeorm_1.PrimaryGeneratedColumn)('uuid'),
+    __metadata("design:type", String)
+], OAuthLoginAttempt.prototype, "id", void 0);
+__decorate([
+    (0, typeorm_1.Index)('idx_oauth_attempts_state_hash', { unique: true }),
+    (0, typeorm_1.Column)({ type: 'char', length: 64, unique: true }),
+    __metadata("design:type", String)
+], OAuthLoginAttempt.prototype, "stateHash", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'enum', enum: auth_account_entity_1.AuthProvider }),
+    __metadata("design:type", String)
+], OAuthLoginAttempt.prototype, "provider", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', length: 128 }),
+    __metadata("design:type", String)
+], OAuthLoginAttempt.prototype, "codeVerifier", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', length: 2048 }),
+    __metadata("design:type", String)
+], OAuthLoginAttempt.prototype, "returnPath", void 0);
+__decorate([
+    (0, typeorm_1.Index)('idx_oauth_attempts_expires_at'),
+    (0, typeorm_1.Column)({ type: 'datetime' }),
+    __metadata("design:type", Date)
+], OAuthLoginAttempt.prototype, "expiresAt", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'datetime', nullable: true }),
+    __metadata("design:type", Date)
+], OAuthLoginAttempt.prototype, "usedAt", void 0);
+__decorate([
+    (0, typeorm_1.CreateDateColumn)({ type: 'datetime' }),
+    __metadata("design:type", Date)
+], OAuthLoginAttempt.prototype, "createdAt", void 0);
+exports.OAuthLoginAttempt = OAuthLoginAttempt = __decorate([
+    (0, typeorm_1.Entity)('oauth_login_attempts')
+], OAuthLoginAttempt);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxhdXRoXFxlbnRpdGllc1xcb2F1dGgtbG9naW4tYXR0ZW1wdC5lbnRpdHkudHMiLCJtYXBwaW5ncyI6Ijs7Ozs7Ozs7Ozs7O0FBQUEscUNBTWlCO0FBQ2pCLCtEQUFxRDtBQUc5QyxJQUFNLGlCQUFpQixHQUF2QixNQUFNLGlCQUFpQjtDQTBCN0IsQ0FBQTtBQTFCWSw4Q0FBaUI7QUFFNUI7SUFEQyxJQUFBLGdDQUFzQixFQUFDLE1BQU0sQ0FBQzs7NkNBQ3BCO0FBSVg7SUFGQyxJQUFBLGVBQUssRUFBQywrQkFBK0IsRUFBRSxFQUFFLE1BQU0sRUFBRSxJQUFJLEVBQUUsQ0FBQztJQUN4RCxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsTUFBTSxFQUFFLE1BQU0sRUFBRSxFQUFFLEVBQUUsTUFBTSxFQUFFLElBQUksRUFBRSxDQUFDOztvREFDakM7QUFHbEI7SUFEQyxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsTUFBTSxFQUFFLElBQUksRUFBRSxrQ0FBWSxFQUFFLENBQUM7O21EQUN0QjtBQUd2QjtJQURDLElBQUEsZ0JBQU0sRUFBQyxFQUFFLElBQUksRUFBRSxTQUFTLEVBQUUsTUFBTSxFQUFFLEdBQUcsRUFBRSxDQUFDOzt1REFDcEI7QUFHckI7SUFEQyxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsU0FBUyxFQUFFLE1BQU0sRUFBRSxJQUFJLEVBQUUsQ0FBQzs7cURBQ3ZCO0FBSW5CO0lBRkMsSUFBQSxlQUFLLEVBQUMsK0JBQStCLENBQUM7SUFDdEMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLFVBQVUsRUFBRSxDQUFDOzhCQUNsQixJQUFJO29EQUFDO0FBR2hCO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLFVBQVUsRUFBRSxRQUFRLEVBQUUsSUFBSSxFQUFFLENBQUM7OEJBQ3JDLElBQUk7aURBQVE7QUFHcEI7SUFEQyxJQUFBLDBCQUFnQixFQUFDLEVBQUUsSUFBSSxFQUFFLFVBQVUsRUFBRSxDQUFDOzhCQUM1QixJQUFJO29EQUFDOzRCQXpCTCxpQkFBaUI7SUFEN0IsSUFBQSxnQkFBTSxFQUFDLHNCQUFzQixDQUFDO0dBQ2xCLGlCQUFpQixDQTBCN0IiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxhdXRoXFxlbnRpdGllc1xcb2F1dGgtbG9naW4tYXR0ZW1wdC5lbnRpdHkudHMiXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHtcbiAgQ29sdW1uLFxuICBDcmVhdGVEYXRlQ29sdW1uLFxuICBFbnRpdHksXG4gIEluZGV4LFxuICBQcmltYXJ5R2VuZXJhdGVkQ29sdW1uLFxufSBmcm9tICd0eXBlb3JtJztcbmltcG9ydCB7IEF1dGhQcm92aWRlciB9IGZyb20gJy4vYXV0aC1hY2NvdW50LmVudGl0eSc7XG5cbkBFbnRpdHkoJ29hdXRoX2xvZ2luX2F0dGVtcHRzJylcbmV4cG9ydCBjbGFzcyBPQXV0aExvZ2luQXR0ZW1wdCB7XG4gIEBQcmltYXJ5R2VuZXJhdGVkQ29sdW1uKCd1dWlkJylcbiAgaWQ6IHN0cmluZztcblxuICBASW5kZXgoJ2lkeF9vYXV0aF9hdHRlbXB0c19zdGF0ZV9oYXNoJywgeyB1bmlxdWU6IHRydWUgfSlcbiAgQENvbHVtbih7IHR5cGU6ICdjaGFyJywgbGVuZ3RoOiA2NCwgdW5pcXVlOiB0cnVlIH0pXG4gIHN0YXRlSGFzaDogc3RyaW5nO1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAnZW51bScsIGVudW06IEF1dGhQcm92aWRlciB9KVxuICBwcm92aWRlcjogQXV0aFByb3ZpZGVyO1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAndmFyY2hhcicsIGxlbmd0aDogMTI4IH0pXG4gIGNvZGVWZXJpZmllcjogc3RyaW5nO1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAndmFyY2hhcicsIGxlbmd0aDogMjA0OCB9KVxuICByZXR1cm5QYXRoOiBzdHJpbmc7XG5cbiAgQEluZGV4KCdpZHhfb2F1dGhfYXR0ZW1wdHNfZXhwaXJlc19hdCcpXG4gIEBDb2x1bW4oeyB0eXBlOiAnZGF0ZXRpbWUnIH0pXG4gIGV4cGlyZXNBdDogRGF0ZTtcblxuICBAQ29sdW1uKHsgdHlwZTogJ2RhdGV0aW1lJywgbnVsbGFibGU6IHRydWUgfSlcbiAgdXNlZEF0OiBEYXRlIHwgbnVsbDtcblxuICBAQ3JlYXRlRGF0ZUNvbHVtbih7IHR5cGU6ICdkYXRldGltZScgfSlcbiAgY3JlYXRlZEF0OiBEYXRlO1xufVxuIl0sInZlcnNpb24iOjN9

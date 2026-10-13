@@ -26,6 +26,12 @@ export class KaraokeRemoteHostSession {
   @Column({ type: 'datetime', nullable: true })
   revokedAt: Date | null;
 
+  @Column({ type: 'char', length: 36, nullable: true })
+  claimedOwnerId: string | null;
+
+  @Column({ type: 'datetime', nullable: true })
+  claimedAt: Date | null;
+
   @CreateDateColumn({ type: 'datetime' })
   createdAt: Date;
 

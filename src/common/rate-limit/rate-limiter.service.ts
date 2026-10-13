@@ -52,6 +52,15 @@ export class RateLimiterService {
     );
   }
 
+  checkSongbookRecommendations(clientId: string): void {
+    this.check(
+      `songbook-recommendations:${clientId}`,
+      20,
+      60_000,
+      'songbook_recommendations_rate_limited',
+    );
+  }
+
   checkRegistration(clientId: string): void {
     this.check(
       `personal-key:${clientId}`,
