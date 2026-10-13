@@ -6,8 +6,12 @@ import { SongbookService } from './songbook.service';
 describe('SongbookService', () => {
   function createSearchCache() {
     return {
-      getOrCreateSearch: jest.fn((_request: unknown, factory: () => Promise<unknown>) => factory()),
-      getOrCreateFilters: jest.fn((factory: () => Promise<unknown>) => factory()),
+      getOrCreateSearch: jest.fn(
+        (_request: unknown, factory: () => Promise<unknown>) => factory(),
+      ),
+      getOrCreateFilters: jest.fn((factory: () => Promise<unknown>) =>
+        factory(),
+      ),
     } as unknown as SongbookSearchCacheService;
   }
 
@@ -25,6 +29,7 @@ describe('SongbookService', () => {
       distinct: jest.fn().mockReturnThis(),
       groupBy: jest.fn().mockReturnThis(),
       getManyAndCount: jest.fn().mockResolvedValue(result),
+      getMany: jest.fn().mockResolvedValue(result),
       getCount: jest.fn().mockResolvedValue(result),
       getOne: jest.fn().mockResolvedValue(result),
       getRawOne: jest.fn().mockResolvedValue(result),
@@ -47,20 +52,26 @@ describe('SongbookService', () => {
       updatedAt: new Date(),
     });
     const builder = createQueryBuilder([[song], 1]);
-    const repository = { createQueryBuilder: jest.fn().mockReturnValue(builder) } as never;
+    const repository = {
+      createQueryBuilder: jest.fn().mockReturnValue(builder),
+    } as never;
     const service = new SongbookService(repository, createSearchCache());
 
-    await expect(service.search({ query: '214', page: 1, limit: 20 })).resolves.toEqual({
-      data: [{
-        id: 1002,
-        title: '214',
-        artist: 'Rivermaya',
-        language: 'English',
-        category: 'OPM',
-        youtubeVideoId: 'hNmgGtSTqb8',
-        source: 'uploaded_catalog',
-        isVerifiedKaraoke: false,
-      }],
+    await expect(
+      service.search({ query: '214', page: 1, limit: 20 }),
+    ).resolves.toEqual({
+      data: [
+        {
+          id: 1002,
+          title: '214',
+          artist: 'Rivermaya',
+          language: 'English',
+          category: 'OPM',
+          youtubeVideoId: 'hNmgGtSTqb8',
+          source: 'uploaded_catalog',
+          isVerifiedKaraoke: false,
+        },
+      ],
       pagination: {
         page: 1,
         limit: 20,
@@ -74,12 +85,99 @@ describe('SongbookService', () => {
     expect(builder.take).toHaveBeenCalledWith(20);
   });
 
+  it('returns random playable recommendations while excluding recent videos', async () => {
+    const song = Object.assign(new KaraokeSong(), {
+      id: 1002,
+      title: '214',
+      artist: 'Rivermaya',
+      language: 'English',
+      category: 'OPM',
+      youtubeVideoId: 'hNmgGtSTqb8',
+      source: 'uploaded_catalog',
+      isVerifiedKaraoke: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const builder = createQueryBuilder([song]);
+    const repository = {
+      createQueryBuilder: jest.fn().mockReturnValue(builder),
+    } as never;
+    const service = new SongbookService(repository, createSearchCache());
+
+    await expect(service.recommendations(['oldVideo01'])).resolves.toEqual({
+      data: [
+        {
+          id: 1002,
+          title: '214',
+          artist: 'Rivermaya',
+          language: 'English',
+          category: 'OPM',
+          youtubeVideoId: 'hNmgGtSTqb8',
+          source: 'uploaded_catalog',
+          isVerifiedKaraoke: false,
+        },
+      ],
+    });
+    expect(builder.where).toHaveBeenCalledWith(
+      'song.youtubeVideoId IS NOT NULL',
+    );
+    expect(builder.andWhere).toHaveBeenCalledWith("song.youtubeVideoId <> ''");
+    expect(builder.andWhere).toHaveBeenCalledWith(
+      'song.youtubeVideoId NOT IN (:...excludeVideoIds)',
+      { excludeVideoIds: ['oldVideo01'] },
+    );
+    expect(builder.orderBy).toHaveBeenCalledWith('RAND()');
+    expect(builder.take).toHaveBeenCalledWith(20);
+  });
+
+  it('starts a new recommendation cycle when all songs are excluded', async () => {
+    const song = Object.assign(new KaraokeSong(), {
+      id: 1002,
+      title: '214',
+      artist: 'Rivermaya',
+      language: 'English',
+      category: 'OPM',
+      youtubeVideoId: 'hNmgGtSTqb8',
+      source: 'uploaded_catalog',
+      isVerifiedKaraoke: false,
+    });
+    const excludedBuilder = createQueryBuilder([]);
+    const fallbackBuilder = createQueryBuilder([song]);
+    const repositoryCreateQueryBuilder = jest
+      .fn()
+      .mockReturnValueOnce(excludedBuilder)
+      .mockReturnValueOnce(fallbackBuilder);
+    const repository = {
+      createQueryBuilder: repositoryCreateQueryBuilder,
+    } as never;
+    const service = new SongbookService(repository, createSearchCache());
+
+    await expect(service.recommendations(['hNmgGtSTqb8'])).resolves.toEqual({
+      data: [
+        {
+          id: 1002,
+          title: '214',
+          artist: 'Rivermaya',
+          language: 'English',
+          category: 'OPM',
+          youtubeVideoId: 'hNmgGtSTqb8',
+          source: 'uploaded_catalog',
+          isVerifiedKaraoke: false,
+        },
+      ],
+    });
+    expect(repositoryCreateQueryBuilder).toHaveBeenCalledTimes(2);
+  });
+
   it('returns letter-filtered artists and the unfiltered artist count from the same Songbook API', async () => {
-    const artistBuilder = createQueryBuilder([{ artist: 'Ben&Ben', songCount: '12' }]);
+    const artistBuilder = createQueryBuilder([
+      { artist: 'Ben&Ben', songCount: '12' },
+    ]);
     const filteredCountBuilder = createQueryBuilder({ total: '1' });
     const catalogCountBuilder = createQueryBuilder({ total: '342' });
     const repository = {
-      createQueryBuilder: jest.fn()
+      createQueryBuilder: jest
+        .fn()
         .mockReturnValueOnce(artistBuilder)
         .mockReturnValueOnce(filteredCountBuilder)
         .mockReturnValueOnce(catalogCountBuilder),
@@ -87,7 +185,12 @@ describe('SongbookService', () => {
     const service = new SongbookService(repository, createSearchCache());
 
     await expect(
-      service.browseArtists({ browse: 'artists', letter: 'B', page: 1, limit: 20 }),
+      service.browseArtists({
+        browse: 'artists',
+        letter: 'B',
+        page: 1,
+        limit: 20,
+      }),
     ).resolves.toEqual({
       data: [{ artist: 'Ben&Ben', songCount: 12 }],
       pagination: {
@@ -108,10 +211,17 @@ describe('SongbookService', () => {
   });
 
   it('returns distinct filter values from the database', async () => {
-    const languageBuilder = createQueryBuilder([{ value: 'English' }, { value: 'Tagalog' }]);
-    const categoryBuilder = createQueryBuilder([{ value: 'International' }, { value: 'OPM' }]);
+    const languageBuilder = createQueryBuilder([
+      { value: 'English' },
+      { value: 'Tagalog' },
+    ]);
+    const categoryBuilder = createQueryBuilder([
+      { value: 'International' },
+      { value: 'OPM' },
+    ]);
     const repository = {
-      createQueryBuilder: jest.fn()
+      createQueryBuilder: jest
+        .fn()
         .mockReturnValueOnce(languageBuilder)
         .mockReturnValueOnce(categoryBuilder),
     } as never;
@@ -125,9 +235,13 @@ describe('SongbookService', () => {
 
   it('returns 404 semantics for an unknown song', async () => {
     const builder = createQueryBuilder(null);
-    const repository = { createQueryBuilder: jest.fn().mockReturnValue(builder) } as never;
+    const repository = {
+      createQueryBuilder: jest.fn().mockReturnValue(builder),
+    } as never;
     const service = new SongbookService(repository, createSearchCache());
 
-    await expect(service.findById(9999)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.findById(9999)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });

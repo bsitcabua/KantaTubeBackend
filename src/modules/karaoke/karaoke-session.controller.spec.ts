@@ -9,6 +9,7 @@ import { KaraokeSessionService } from './karaoke-session.service';
 describe('KaraokeSessionController', () => {
   const user = { id: '123e4567-e89b-42d3-a456-426614174000' } as User;
   const sessionId = '123e4567-e89b-42d3-a456-426614174001';
+  const clientId = '123e4567-e89b-42d3-a456-426614174002';
 
   function createController(remoteAuthorization?: {
     renewActiveGrantsForSession?: jest.Mock;
@@ -56,17 +57,17 @@ describe('KaraokeSessionController', () => {
   it('derives ownership from the authenticated user for all operations', () => {
     const { controller, service } = createController();
 
-    controller.create(user, { alias: 'Living Room' });
+    controller.create(user, { alias: 'Living Room', clientId });
     controller.listActive(user);
-    controller.get(user, sessionId);
-    controller.heartbeat(user, sessionId);
-    controller.end(user, sessionId);
+    controller.get(user, sessionId, clientId);
+    controller.heartbeat(user, sessionId, { clientId });
+    controller.end(user, sessionId, { clientId });
 
-    expect(service.create).toHaveBeenCalledWith(user.id, 'Living Room');
+    expect(service.create).toHaveBeenCalledWith(user.id, 'Living Room', clientId);
     expect(service.listActive).toHaveBeenCalledWith(user.id);
-    expect(service.get).toHaveBeenCalledWith(user.id, sessionId);
-    expect(service.heartbeat).toHaveBeenCalledWith(user.id, sessionId);
-    expect(service.end).toHaveBeenCalledWith(user.id, sessionId);
+    expect(service.get).toHaveBeenCalledWith(user.id, sessionId, clientId);
+    expect(service.heartbeat).toHaveBeenCalledWith(user.id, sessionId, clientId, false);
+    expect(service.end).toHaveBeenCalledWith(user.id, sessionId, clientId);
   });
 
   it('renews remote grants only after a successful owned heartbeat', async () => {
@@ -76,9 +77,9 @@ describe('KaraokeSessionController', () => {
     const { controller, service } = createController(remoteAuthorization);
     service.heartbeat.mockResolvedValue({} as never);
 
-    await controller.heartbeat(user, sessionId);
+    await controller.heartbeat(user, sessionId, { clientId });
 
-    expect(service.heartbeat).toHaveBeenCalledWith(user.id, sessionId);
+    expect(service.heartbeat).toHaveBeenCalledWith(user.id, sessionId, clientId, false);
     expect(
       remoteAuthorization.renewActiveGrantsForSession,
     ).toHaveBeenCalledWith(sessionId);
@@ -95,13 +96,14 @@ describe('KaraokeSessionController', () => {
       expiresAt,
     });
 
-    const result = await controller.socketTicket(user, sessionId, {
+    const result = await controller.socketTicket(user, sessionId, clientId, {
       headers: { cookie: 'other=value; kantatube_session=raw%20session%20token' },
     } as never);
 
     expect(remoteAuthorization.findActiveSession).toHaveBeenCalledWith(
       user.id,
       sessionId,
+      clientId,
     );
     expect(auth.issueSocketTicket).toHaveBeenCalledWith(
       'raw session token',
@@ -117,7 +119,7 @@ describe('KaraokeSessionController', () => {
     const { controller, service } = createController(remoteAuthorization);
     service.heartbeat.mockRejectedValue(new Error('heartbeat failed'));
 
-    await expect(controller.heartbeat(user, sessionId)).rejects.toThrow(
+    await expect(controller.heartbeat(user, sessionId, { clientId })).rejects.toThrow(
       'heartbeat failed',
     );
     expect(

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -13,6 +14,7 @@ import {
   KaraokeSession,
   KaraokeSessionStatus,
 } from './entities/karaoke-session.entity';
+import { User, UserStatus } from '../users/entities/user.entity';
 import { KaraokePairingSession } from './entities/karaoke-pairing-session.entity';
 import {
   KaraokeRemoteGrant,
@@ -44,13 +46,20 @@ export interface ApprovedRemote {
   grantToken: string;
 }
 
+export interface RemotePairingTarget {
+  sessionId: string;
+  sessionKind: RemoteSessionKind;
+}
+
 @Injectable()
 export class RemoteAuthorizationService {
   static readonly defaultPairingTokenSeconds = 10 * 60;
+  static readonly defaultRemoteRequestSeconds = 2 * 60;
   static readonly defaultGrantHours = 12;
 
   private readonly logger = new Logger(RemoteAuthorizationService.name);
   private readonly pairingTokenMs: number;
+  private readonly remoteRequestLifetimeMs: number;
   private readonly grantLifetimeMs: number;
   private readonly sessionInvalidationListeners = new Set<
     (sessionId: string, sessionKind: RemoteSessionKind) => void
@@ -73,6 +82,12 @@ export class RemoteAuthorizationService {
       60,
       15 * 60,
     );
+    const remoteRequestSeconds = this.readNumber(
+      'REMOTE_REQUEST_EXPIRY_SECONDS',
+      RemoteAuthorizationService.defaultRemoteRequestSeconds,
+      30,
+      15 * 60,
+    );
     const grantHours = this.readNumber(
       'REMOTE_GRANT_LIFETIME_HOURS',
       RemoteAuthorizationService.defaultGrantHours,
@@ -80,15 +95,33 @@ export class RemoteAuthorizationService {
       24 * 7,
     );
     this.pairingTokenMs = pairingSeconds * 1000;
+    this.remoteRequestLifetimeMs = remoteRequestSeconds * 1000;
     this.grantLifetimeMs = grantHours * 60 * 60 * 1000;
   }
 
   async createPairingToken(
     ownerId: string,
     sessionId: string,
+    clientId?: unknown,
   ): Promise<PairingInvitation> {
-    const session = await this.findActiveSession(ownerId, sessionId);
-    return this.issuePairingToken('karaoke', session.id);
+    const session = await this.findActiveSession(ownerId, sessionId, clientId);
+    const guestClaim = await this.hostSessions.findOne({
+      where: { id: session.id, claimedOwnerId: ownerId },
+    });
+    const keepGuestRoute = !!guestClaim &&
+      !guestClaim.revokedAt &&
+      guestClaim.expiresAt.getTime() > Date.now();
+    return this.issuePairingToken(keepGuestRoute ? 'guest' : 'karaoke', session.id);
+  }
+
+  async isClaimedGuestSession(
+    sessionId: string,
+    ownerId: string,
+  ): Promise<boolean> {
+    const host = await this.hostSessions.findOne({
+      where: { id: sessionId, claimedOwnerId: ownerId },
+    });
+    return !!host && !host.revokedAt && host.expiresAt.getTime() > Date.now();
   }
 
   async createGuestHost(): Promise<GuestHostInvitation> {
@@ -146,6 +179,7 @@ export class RemoteAuthorizationService {
     pairingToken: unknown,
     deviceId: string,
     deviceLabel: string,
+    displayName: unknown = deviceLabel,
   ): Promise<PendingRemote> {
     if (!this.isDeviceId(deviceId)) {
       throw this.remoteError(
@@ -160,45 +194,16 @@ export class RemoteAuthorizationService {
       );
     }
     const now = new Date();
-    const pairing = await this.pairingSessions.findOne({
-      where: {
-        tokenHash: this.hash(pairingToken),
-        consumedAt: IsNull(),
-        expiresAt: MoreThan(now),
-      },
-    });
-    if (!pairing) {
-      const expired = await this.pairingSessions.findOne({
-        where: { tokenHash: this.hash(pairingToken) },
-      });
-      throw this.pairingError(
-        expired ? 'PAIR_TOKEN_EXPIRED' : 'PAIR_TOKEN_INVALID',
-        expired
-          ? 'This pairing invitation has expired.'
-          : 'The pairing invitation is invalid.',
-      );
-    }
-
-    const sessionKind: RemoteSessionKind = pairing.remoteHostSessionId
-      ? 'guest'
-      : 'karaoke';
-    const sessionId =
-      sessionKind === 'guest'
-        ? pairing.remoteHostSessionId
-        : pairing.karaokeSessionId;
-    if (!sessionId) {
-      throw this.pairingError(
-        'PAIR_TOKEN_INVALID',
-        'The pairing invitation is invalid.',
-      );
-    }
-    await this.assertActiveRemoteSession(sessionId, sessionKind);
+    const displayNameValue = this.requireRemoteDisplayName(displayName);
+    const target = await this.resolvePairingTarget(pairingToken, now);
+    const { sessionId, sessionKind } = target;
 
     let grant = await this.grants.findOne({
       where: {
         ...this.sessionScope(sessionId, sessionKind),
         deviceId,
         status: KaraokeRemoteGrantStatus.PENDING,
+        expiresAt: MoreThan(now),
       },
     });
     if (!grant) {
@@ -209,16 +214,25 @@ export class RemoteAuthorizationService {
         deviceLabel: deviceLabel.slice(0, 100),
         status: KaraokeRemoteGrantStatus.PENDING,
         grantTokenHash: null,
-        expiresAt: new Date(now.getTime() + this.grantLifetimeMs),
+        expiresAt: new Date(now.getTime() + this.remoteRequestLifetimeMs),
         approvedAt: null,
         revokedAt: null,
+        displayName: displayNameValue,
       });
+      grant = await this.grants.save(grant);
+    } else {
+      grant.displayName = displayNameValue;
+      grant.deviceLabel = deviceLabel.slice(0, 100);
       grant = await this.grants.save(grant);
     }
     this.logger.log(
       `Remote pairing request ${this.safeId(grant.id)} received for session ${this.safeId(sessionId)}`,
     );
     return { grant, sessionId, sessionKind };
+  }
+
+  async validatePairingToken(pairingToken: unknown): Promise<RemotePairingTarget> {
+    return this.resolvePairingTarget(pairingToken, new Date());
   }
 
   async approveRemote(
@@ -231,6 +245,7 @@ export class RemoteAuthorizationService {
         ...this.sessionScope(sessionId, sessionKind),
         id: requestId,
         status: KaraokeRemoteGrantStatus.PENDING,
+        expiresAt: MoreThan(new Date()),
       },
     });
     if (!grant)
@@ -259,6 +274,7 @@ export class RemoteAuthorizationService {
         ...this.sessionScope(sessionId, sessionKind),
         id: requestId,
         status: KaraokeRemoteGrantStatus.PENDING,
+        expiresAt: MoreThan(new Date()),
       },
     });
     if (!grant)
@@ -331,6 +347,28 @@ export class RemoteAuthorizationService {
       sessionId,
       grant.remoteHostSessionId ? 'guest' : 'karaoke',
     );
+    return grant;
+  }
+
+  /**
+   * Authorize a Remote library request and bind it to the authenticated
+   * account that owns the karaoke session. Library data is still filtered to
+   * PUBLIC by the library controller after this capability is validated.
+   */
+  async authorizeLibraryAccess(
+    ownerId: string,
+    sessionId: string,
+    deviceId: string,
+    grantToken: unknown,
+  ): Promise<KaraokeRemoteGrant> {
+    const grant = await this.authorizeGrant(sessionId, deviceId, grantToken);
+    const libraryOwner = await this.resolveLibraryOwnerFromGrant(grant);
+    if (!libraryOwner || libraryOwner.id !== ownerId) {
+      throw this.remoteError(
+        'REMOTE_NOT_AUTHORIZED',
+        'This Remote is not connected to the current account.',
+      );
+    }
     return grant;
   }
 
@@ -452,6 +490,7 @@ export class RemoteAuthorizationService {
   async findActiveSession(
     ownerId: string,
     sessionId: string,
+    clientId?: unknown,
   ): Promise<KaraokeSession> {
     const session = await this.sessions.findOne({
       where: { id: sessionId, ownerId },
@@ -461,14 +500,110 @@ export class RemoteAuthorizationService {
         code: 'SESSION_NOT_FOUND',
         message: 'Karaoke session not found.',
       });
-    return this.assertActiveSession(session);
+    const activeSession = this.assertActiveSession(session);
+    if (
+      typeof clientId === 'string' &&
+      clientId.trim() &&
+      activeSession.clientId &&
+      activeSession.clientId !== clientId.trim()
+    ) {
+      throw new ConflictException({
+        code: 'karaoke_session_taken_over',
+        message: 'This karaoke session is active on another device.',
+      });
+    }
+    return activeSession;
   }
 
-  async findActiveSessionById(sessionId: string): Promise<KaraokeSession> {
-    const session = await this.sessions.findOne({ where: { id: sessionId } });
+  async findActiveSessionById(
+    sessionId: string,
+    includeOwner = false,
+  ): Promise<KaraokeSession> {
+    const session = await this.sessions.findOne({
+      where: { id: sessionId },
+      ...(includeOwner ? { relations: { owner: true } } : {}),
+    });
     if (!session)
       throw this.remoteError('SESSION_NOT_FOUND', 'Karaoke session not found.');
     return this.assertActiveSession(session);
+  }
+
+  async resolveLibraryOwner(
+    sessionId: string,
+    deviceId: string,
+    grantToken: unknown,
+  ): Promise<User> {
+    const grant = await this.authorizeGrant(sessionId, deviceId, grantToken);
+    const owner = await this.resolveLibraryOwnerFromGrant(grant);
+    if (!owner) {
+      throw this.remoteError(
+        'REMOTE_NOT_AUTHORIZED',
+        'Anonymous Remotes cannot access an account library.',
+      );
+    }
+    return owner;
+  }
+
+  /**
+   * A claimed anonymous host keeps the guest socket route so existing queue
+   * connections are not moved. Once claimed, however, its UUID is also the
+   * active KaraokeSession UUID and its owner may share PUBLIC library data.
+   * An unclaimed anonymous host intentionally returns null.
+   */
+  async getClaimedGuestOwnerId(sessionId: string): Promise<string | null> {
+    const owner = await this.resolveClaimedGuestOwner(sessionId);
+    return owner?.id ?? null;
+  }
+
+  private async resolveLibraryOwnerFromGrant(
+    grant: KaraokeRemoteGrant,
+  ): Promise<User | null> {
+    if (grant.karaokeSessionId) {
+      const session = await this.findActiveSessionById(
+        grant.karaokeSessionId,
+        true,
+      );
+      if (!session.owner || session.owner.status !== UserStatus.ACTIVE) {
+        return null;
+      }
+      return session.owner;
+    }
+
+    if (grant.remoteHostSessionId) {
+      return this.resolveClaimedGuestOwner(grant.remoteHostSessionId);
+    }
+
+    return null;
+  }
+
+  private async resolveClaimedGuestOwner(
+    hostSessionId: string,
+  ): Promise<User | null> {
+    const host = await this.hostSessions.findOne({
+      where: { id: hostSessionId },
+    });
+    if (
+      !host?.claimedOwnerId ||
+      host.revokedAt ||
+      host.expiresAt.getTime() <= Date.now()
+    ) {
+      return null;
+    }
+
+    try {
+      const session = await this.findActiveSessionById(hostSessionId, true);
+      if (
+        session.ownerId !== host.claimedOwnerId ||
+        !session.owner ||
+        session.owner.status !== UserStatus.ACTIVE
+      ) {
+        return null;
+      }
+      return session.owner;
+    } catch {
+      // No KaraokeSession exists for a genuinely anonymous host.
+      return null;
+    }
   }
 
   private async issuePairingToken(
@@ -489,6 +624,75 @@ export class RemoteAuthorizationService {
     });
     const saved = await this.pairingSessions.save(record);
     return { token, sessionId, expiresAt: saved.expiresAt };
+  }
+
+  private async resolvePairingTarget(
+    pairingToken: unknown,
+    now: Date,
+  ): Promise<RemotePairingTarget> {
+    if (typeof pairingToken !== 'string' || pairingToken.length < 32) {
+      throw this.pairingError(
+        'PAIR_TOKEN_INVALID',
+        'The pairing invitation is invalid.',
+      );
+    }
+    const pairing = await this.pairingSessions.findOne({
+      where: {
+        tokenHash: this.hash(pairingToken),
+        consumedAt: IsNull(),
+        expiresAt: MoreThan(now),
+      },
+    });
+    if (!pairing) {
+      const expired = await this.pairingSessions.findOne({
+        where: { tokenHash: this.hash(pairingToken) },
+      });
+      throw this.pairingError(
+        expired ? 'PAIR_TOKEN_EXPIRED' : 'PAIR_TOKEN_INVALID',
+        expired
+          ? 'This pairing invitation has expired.'
+          : 'The pairing invitation is invalid.',
+      );
+    }
+
+    const sessionKind: RemoteSessionKind = pairing.remoteHostSessionId
+      ? 'guest'
+      : 'karaoke';
+    const sessionId =
+      sessionKind === 'guest'
+        ? pairing.remoteHostSessionId
+        : pairing.karaokeSessionId;
+    if (!sessionId) {
+      throw this.pairingError(
+        'PAIR_TOKEN_INVALID',
+        'The pairing invitation is invalid.',
+      );
+    }
+    await this.assertActiveRemoteSession(sessionId, sessionKind);
+    return { sessionId, sessionKind };
+  }
+
+  private requireRemoteDisplayName(value: unknown): string {
+    const displayName = typeof value === 'string' ? value.trim() : '';
+    if (!displayName) {
+      throw new BadRequestException({
+        code: 'INVALID_PAYLOAD',
+        message: 'Enter a name before requesting access.',
+      });
+    }
+    if (displayName.length < 2) {
+      throw new BadRequestException({
+        code: 'INVALID_PAYLOAD',
+        message: 'Name must be at least 2 characters.',
+      });
+    }
+    if (displayName.length > 30) {
+      throw new BadRequestException({
+        code: 'INVALID_PAYLOAD',
+        message: 'Name must be 30 characters or less.',
+      });
+    }
+    return displayName;
   }
 
   /**

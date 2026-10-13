@@ -25,6 +25,10 @@ export interface SongbookSearchResponse {
   pagination: SongbookPaginationResponse;
 }
 
+export interface SongbookRecommendationsResponse {
+  data: SongbookSongResponse[];
+}
+
 export interface SongbookArtistResponse {
   artist: string;
   songCount: number;

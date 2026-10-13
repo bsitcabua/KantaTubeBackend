@@ -1,0 +1,117 @@
+3092538fc81086ded3dc81cb8a2318bc
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KaraokeRemoteGrant = exports.KaraokeRemoteGrantStatus = void 0;
+const typeorm_1 = require("typeorm");
+const karaoke_session_entity_1 = require("./karaoke-session.entity");
+const karaoke_remote_host_session_entity_1 = require("./karaoke-remote-host-session.entity");
+var KaraokeRemoteGrantStatus;
+(function (KaraokeRemoteGrantStatus) {
+    KaraokeRemoteGrantStatus["PENDING"] = "pending";
+    KaraokeRemoteGrantStatus["APPROVED"] = "approved";
+    KaraokeRemoteGrantStatus["REJECTED"] = "rejected";
+    KaraokeRemoteGrantStatus["REVOKED"] = "revoked";
+    KaraokeRemoteGrantStatus["EXPIRED"] = "expired";
+    KaraokeRemoteGrantStatus["DISCONNECTED"] = "disconnected";
+})(KaraokeRemoteGrantStatus || (exports.KaraokeRemoteGrantStatus = KaraokeRemoteGrantStatus = {}));
+let KaraokeRemoteGrant = class KaraokeRemoteGrant {
+};
+exports.KaraokeRemoteGrant = KaraokeRemoteGrant;
+__decorate([
+    (0, typeorm_1.PrimaryGeneratedColumn)('uuid'),
+    __metadata("design:type", String)
+], KaraokeRemoteGrant.prototype, "id", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'char', length: 36, nullable: true }),
+    __metadata("design:type", String)
+], KaraokeRemoteGrant.prototype, "karaokeSessionId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'char', length: 36, nullable: true }),
+    __metadata("design:type", String)
+], KaraokeRemoteGrant.prototype, "remoteHostSessionId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'char', length: 36 }),
+    __metadata("design:type", String)
+], KaraokeRemoteGrant.prototype, "deviceId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', length: 100 }),
+    __metadata("design:type", String)
+], KaraokeRemoteGrant.prototype, "deviceLabel", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        type: 'enum',
+        enum: KaraokeRemoteGrantStatus,
+        default: KaraokeRemoteGrantStatus.PENDING,
+    }),
+    __metadata("design:type", String)
+], KaraokeRemoteGrant.prototype, "status", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'char', length: 64, nullable: true }),
+    __metadata("design:type", String)
+], KaraokeRemoteGrant.prototype, "grantTokenHash", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'datetime' }),
+    __metadata("design:type", Date)
+], KaraokeRemoteGrant.prototype, "expiresAt", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'datetime', nullable: true }),
+    __metadata("design:type", Date)
+], KaraokeRemoteGrant.prototype, "approvedAt", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'datetime', nullable: true }),
+    __metadata("design:type", Date)
+], KaraokeRemoteGrant.prototype, "revokedAt", void 0);
+__decorate([
+    (0, typeorm_1.CreateDateColumn)({ type: 'datetime' }),
+    __metadata("design:type", Date)
+], KaraokeRemoteGrant.prototype, "createdAt", void 0);
+__decorate([
+    (0, typeorm_1.UpdateDateColumn)({ type: 'datetime' }),
+    __metadata("design:type", Date)
+], KaraokeRemoteGrant.prototype, "updatedAt", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => karaoke_session_entity_1.KaraokeSession, { onDelete: 'CASCADE' }),
+    (0, typeorm_1.JoinColumn)({ name: 'karaokeSessionId' }),
+    __metadata("design:type", karaoke_session_entity_1.KaraokeSession)
+], KaraokeRemoteGrant.prototype, "karaokeSession", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => karaoke_remote_host_session_entity_1.KaraokeRemoteHostSession, (host) => host.remoteGrants, {
+        onDelete: 'CASCADE',
+    }),
+    (0, typeorm_1.JoinColumn)({ name: 'remoteHostSessionId' }),
+    __metadata("design:type", karaoke_remote_host_session_entity_1.KaraokeRemoteHostSession)
+], KaraokeRemoteGrant.prototype, "remoteHostSession", void 0);
+exports.KaraokeRemoteGrant = KaraokeRemoteGrant = __decorate([
+    (0, typeorm_1.Entity)('karaoke_remote_grants'),
+    (0, typeorm_1.Index)('idx_karaoke_remote_grants_session_status', [
+        'karaokeSessionId',
+        'status',
+    ]),
+    (0, typeorm_1.Index)('idx_karaoke_remote_grants_device', [
+        'karaokeSessionId',
+        'deviceId',
+        'status',
+    ]),
+    (0, typeorm_1.Index)('idx_karaoke_remote_grants_guest_session_status', [
+        'remoteHostSessionId',
+        'status',
+    ]),
+    (0, typeorm_1.Index)('idx_karaoke_remote_grants_guest_device', [
+        'remoteHostSessionId',
+        'deviceId',
+        'status',
+    ]),
+    (0, typeorm_1.Index)('idx_karaoke_remote_grants_token_hash', ['grantTokenHash'], {
+        unique: true,
+    })
+], KaraokeRemoteGrant);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxrYXJhb2tlXFxlbnRpdGllc1xca2FyYW9rZS1yZW1vdGUtZ3JhbnQuZW50aXR5LnRzIiwibWFwcGluZ3MiOiI7Ozs7Ozs7Ozs7OztBQUFBLHFDQVNpQjtBQUNqQixxRUFBMEQ7QUFDMUQsNkZBQWdGO0FBRWhGLElBQVksd0JBT1g7QUFQRCxXQUFZLHdCQUF3QjtJQUNsQywrQ0FBbUIsQ0FBQTtJQUNuQixpREFBcUIsQ0FBQTtJQUNyQixpREFBcUIsQ0FBQTtJQUNyQiwrQ0FBbUIsQ0FBQTtJQUNuQiwrQ0FBbUIsQ0FBQTtJQUNuQix5REFBNkIsQ0FBQTtBQUMvQixDQUFDLEVBUFcsd0JBQXdCLHdDQUF4Qix3QkFBd0IsUUFPbkM7QUF3Qk0sSUFBTSxrQkFBa0IsR0FBeEIsTUFBTSxrQkFBa0I7Q0FrRDlCLENBQUE7QUFsRFksZ0RBQWtCO0FBRTdCO0lBREMsSUFBQSxnQ0FBc0IsRUFBQyxNQUFNLENBQUM7OzhDQUNwQjtBQUdYO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxNQUFNLEVBQUUsRUFBRSxFQUFFLFFBQVEsRUFBRSxJQUFJLEVBQUUsQ0FBQzs7NERBQ3JCO0FBR2hDO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxNQUFNLEVBQUUsRUFBRSxFQUFFLFFBQVEsRUFBRSxJQUFJLEVBQUUsQ0FBQzs7K0RBQ2xCO0FBR25DO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxNQUFNLEVBQUUsRUFBRSxFQUFFLENBQUM7O29EQUNwQjtBQUdqQjtJQURDLElBQUEsZ0JBQU0sRUFBQyxFQUFFLElBQUksRUFBRSxTQUFTLEVBQUUsTUFBTSxFQUFFLEdBQUcsRUFBRSxDQUFDOzt1REFDckI7QUFPcEI7SUFMQyxJQUFBLGdCQUFNLEVBQUM7UUFDTixJQUFJLEVBQUUsTUFBTTtRQUNaLElBQUksRUFBRSx3QkFBd0I7UUFDOUIsT0FBTyxFQUFFLHdCQUF3QixDQUFDLE9BQU87S0FDMUMsQ0FBQzs7a0RBQytCO0FBR2pDO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxNQUFNLEVBQUUsRUFBRSxFQUFFLFFBQVEsRUFBRSxJQUFJLEVBQUUsQ0FBQzs7MERBQ3ZCO0FBRzlCO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLFVBQVUsRUFBRSxDQUFDOzhCQUNsQixJQUFJO3FEQUFDO0FBR2hCO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLFVBQVUsRUFBRSxRQUFRLEVBQUUsSUFBSSxFQUFFLENBQUM7OEJBQ2pDLElBQUk7c0RBQVE7QUFHeEI7SUFEQyxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsVUFBVSxFQUFFLFFBQVEsRUFBRSxJQUFJLEVBQUUsQ0FBQzs4QkFDbEMsSUFBSTtxREFBUTtBQUd2QjtJQURDLElBQUEsMEJBQWdCLEVBQUMsRUFBRSxJQUFJLEVBQUUsVUFBVSxFQUFFLENBQUM7OEJBQzVCLElBQUk7cURBQUM7QUFHaEI7SUFEQyxJQUFBLDBCQUFnQixFQUFDLEVBQUUsSUFBSSxFQUFFLFVBQVUsRUFBRSxDQUFDOzhCQUM1QixJQUFJO3FEQUFDO0FBSWhCO0lBRkMsSUFBQSxtQkFBUyxFQUFDLEdBQUcsRUFBRSxDQUFDLHVDQUFjLEVBQUUsRUFBRSxRQUFRLEVBQUUsU0FBUyxFQUFFLENBQUM7SUFDeEQsSUFBQSxvQkFBVSxFQUFDLEVBQUUsSUFBSSxFQUFFLGtCQUFrQixFQUFFLENBQUM7OEJBQ3pCLHVDQUFjOzBEQUFDO0FBTS9CO0lBSkMsSUFBQSxtQkFBUyxFQUFDLEdBQUcsRUFBRSxDQUFDLDZEQUF3QixFQUFFLENBQUMsSUFBSSxFQUFFLEVBQUUsQ0FBQyxJQUFJLENBQUMsWUFBWSxFQUFFO1FBQ3RFLFFBQVEsRUFBRSxTQUFTO0tBQ3BCLENBQUM7SUFDRCxJQUFBLG9CQUFVLEVBQUMsRUFBRSxJQUFJLEVBQUUscUJBQXFCLEVBQUUsQ0FBQzs4QkFDekIsNkRBQXdCOzZEQUFDOzZCQWpEakMsa0JBQWtCO0lBdEI5QixJQUFBLGdCQUFNLEVBQUMsdUJBQXVCLENBQUM7SUFDL0IsSUFBQSxlQUFLLEVBQUMsMENBQTBDLEVBQUU7UUFDakQsa0JBQWtCO1FBQ2xCLFFBQVE7S0FDVCxDQUFDO0lBQ0QsSUFBQSxlQUFLLEVBQUMsa0NBQWtDLEVBQUU7UUFDekMsa0JBQWtCO1FBQ2xCLFVBQVU7UUFDVixRQUFRO0tBQ1QsQ0FBQztJQUNELElBQUEsZUFBSyxFQUFDLGdEQUFnRCxFQUFFO1FBQ3ZELHFCQUFxQjtRQUNyQixRQUFRO0tBQ1QsQ0FBQztJQUNELElBQUEsZUFBSyxFQUFDLHdDQUF3QyxFQUFFO1FBQy9DLHFCQUFxQjtRQUNyQixVQUFVO1FBQ1YsUUFBUTtLQUNULENBQUM7SUFDRCxJQUFBLGVBQUssRUFBQyxzQ0FBc0MsRUFBRSxDQUFDLGdCQUFnQixDQUFDLEVBQUU7UUFDakUsTUFBTSxFQUFFLElBQUk7S0FDYixDQUFDO0dBQ1csa0JBQWtCLENBa0Q5QiIsIm5hbWVzIjpbXSwic291cmNlcyI6WyJEOlxcRGV2ZWxvcGVyXFxQcm9qZWN0c1xcS2FudGFUdWJlXFxLYW50YVR1YmVCYWNrZW5kXFxzcmNcXG1vZHVsZXNcXGthcmFva2VcXGVudGl0aWVzXFxrYXJhb2tlLXJlbW90ZS1ncmFudC5lbnRpdHkudHMiXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHtcbiAgQ29sdW1uLFxuICBDcmVhdGVEYXRlQ29sdW1uLFxuICBFbnRpdHksXG4gIEluZGV4LFxuICBKb2luQ29sdW1uLFxuICBNYW55VG9PbmUsXG4gIFByaW1hcnlHZW5lcmF0ZWRDb2x1bW4sXG4gIFVwZGF0ZURhdGVDb2x1bW4sXG59IGZyb20gJ3R5cGVvcm0nO1xuaW1wb3J0IHsgS2FyYW9rZVNlc3Npb24gfSBmcm9tICcuL2thcmFva2Utc2Vzc2lvbi5lbnRpdHknO1xuaW1wb3J0IHsgS2FyYW9rZVJlbW90ZUhvc3RTZXNzaW9uIH0gZnJvbSAnLi9rYXJhb2tlLXJlbW90ZS1ob3N0LXNlc3Npb24uZW50aXR5JztcblxuZXhwb3J0IGVudW0gS2FyYW9rZVJlbW90ZUdyYW50U3RhdHVzIHtcbiAgUEVORElORyA9ICdwZW5kaW5nJyxcbiAgQVBQUk9WRUQgPSAnYXBwcm92ZWQnLFxuICBSRUpFQ1RFRCA9ICdyZWplY3RlZCcsXG4gIFJFVk9LRUQgPSAncmV2b2tlZCcsXG4gIEVYUElSRUQgPSAnZXhwaXJlZCcsXG4gIERJU0NPTk5FQ1RFRCA9ICdkaXNjb25uZWN0ZWQnLFxufVxuXG5ARW50aXR5KCdrYXJhb2tlX3JlbW90ZV9ncmFudHMnKVxuQEluZGV4KCdpZHhfa2FyYW9rZV9yZW1vdGVfZ3JhbnRzX3Nlc3Npb25fc3RhdHVzJywgW1xuICAna2FyYW9rZVNlc3Npb25JZCcsXG4gICdzdGF0dXMnLFxuXSlcbkBJbmRleCgnaWR4X2thcmFva2VfcmVtb3RlX2dyYW50c19kZXZpY2UnLCBbXG4gICdrYXJhb2tlU2Vzc2lvbklkJyxcbiAgJ2RldmljZUlkJyxcbiAgJ3N0YXR1cycsXG5dKVxuQEluZGV4KCdpZHhfa2FyYW9rZV9yZW1vdGVfZ3JhbnRzX2d1ZXN0X3Nlc3Npb25fc3RhdHVzJywgW1xuICAncmVtb3RlSG9zdFNlc3Npb25JZCcsXG4gICdzdGF0dXMnLFxuXSlcbkBJbmRleCgnaWR4X2thcmFva2VfcmVtb3RlX2dyYW50c19ndWVzdF9kZXZpY2UnLCBbXG4gICdyZW1vdGVIb3N0U2Vzc2lvbklkJyxcbiAgJ2RldmljZUlkJyxcbiAgJ3N0YXR1cycsXG5dKVxuQEluZGV4KCdpZHhfa2FyYW9rZV9yZW1vdGVfZ3JhbnRzX3Rva2VuX2hhc2gnLCBbJ2dyYW50VG9rZW5IYXNoJ10sIHtcbiAgdW5pcXVlOiB0cnVlLFxufSlcbmV4cG9ydCBjbGFzcyBLYXJhb2tlUmVtb3RlR3JhbnQge1xuICBAUHJpbWFyeUdlbmVyYXRlZENvbHVtbigndXVpZCcpXG4gIGlkOiBzdHJpbmc7XG5cbiAgQENvbHVtbih7IHR5cGU6ICdjaGFyJywgbGVuZ3RoOiAzNiwgbnVsbGFibGU6IHRydWUgfSlcbiAga2FyYW9rZVNlc3Npb25JZDogc3RyaW5nIHwgbnVsbDtcblxuICBAQ29sdW1uKHsgdHlwZTogJ2NoYXInLCBsZW5ndGg6IDM2LCBudWxsYWJsZTogdHJ1ZSB9KVxuICByZW1vdGVIb3N0U2Vzc2lvbklkOiBzdHJpbmcgfCBudWxsO1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAnY2hhcicsIGxlbmd0aDogMzYgfSlcbiAgZGV2aWNlSWQ6IHN0cmluZztcblxuICBAQ29sdW1uKHsgdHlwZTogJ3ZhcmNoYXInLCBsZW5ndGg6IDEwMCB9KVxuICBkZXZpY2VMYWJlbDogc3RyaW5nO1xuXG4gIEBDb2x1bW4oe1xuICAgIHR5cGU6ICdlbnVtJyxcbiAgICBlbnVtOiBLYXJhb2tlUmVtb3RlR3JhbnRTdGF0dXMsXG4gICAgZGVmYXVsdDogS2FyYW9rZVJlbW90ZUdyYW50U3RhdHVzLlBFTkRJTkcsXG4gIH0pXG4gIHN0YXR1czogS2FyYW9rZVJlbW90ZUdyYW50U3RhdHVzO1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAnY2hhcicsIGxlbmd0aDogNjQsIG51bGxhYmxlOiB0cnVlIH0pXG4gIGdyYW50VG9rZW5IYXNoOiBzdHJpbmcgfCBudWxsO1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAnZGF0ZXRpbWUnIH0pXG4gIGV4cGlyZXNBdDogRGF0ZTtcblxuICBAQ29sdW1uKHsgdHlwZTogJ2RhdGV0aW1lJywgbnVsbGFibGU6IHRydWUgfSlcbiAgYXBwcm92ZWRBdDogRGF0ZSB8IG51bGw7XG5cbiAgQENvbHVtbih7IHR5cGU6ICdkYXRldGltZScsIG51bGxhYmxlOiB0cnVlIH0pXG4gIHJldm9rZWRBdDogRGF0ZSB8IG51bGw7XG5cbiAgQENyZWF0ZURhdGVDb2x1bW4oeyB0eXBlOiAnZGF0ZXRpbWUnIH0pXG4gIGNyZWF0ZWRBdDogRGF0ZTtcblxuICBAVXBkYXRlRGF0ZUNvbHVtbih7IHR5cGU6ICdkYXRldGltZScgfSlcbiAgdXBkYXRlZEF0OiBEYXRlO1xuXG4gIEBNYW55VG9PbmUoKCkgPT4gS2FyYW9rZVNlc3Npb24sIHsgb25EZWxldGU6ICdDQVNDQURFJyB9KVxuICBASm9pbkNvbHVtbih7IG5hbWU6ICdrYXJhb2tlU2Vzc2lvbklkJyB9KVxuICBrYXJhb2tlU2Vzc2lvbjogS2FyYW9rZVNlc3Npb247XG5cbiAgQE1hbnlUb09uZSgoKSA9PiBLYXJhb2tlUmVtb3RlSG9zdFNlc3Npb24sIChob3N0KSA9PiBob3N0LnJlbW90ZUdyYW50cywge1xuICAgIG9uRGVsZXRlOiAnQ0FTQ0FERScsXG4gIH0pXG4gIEBKb2luQ29sdW1uKHsgbmFtZTogJ3JlbW90ZUhvc3RTZXNzaW9uSWQnIH0pXG4gIHJlbW90ZUhvc3RTZXNzaW9uOiBLYXJhb2tlUmVtb3RlSG9zdFNlc3Npb247XG59XG4iXSwidmVyc2lvbiI6M30=
