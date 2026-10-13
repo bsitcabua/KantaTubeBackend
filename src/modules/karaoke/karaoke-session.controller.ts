@@ -1,11 +1,13 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   Logger,
   Param,
   Post,
   Put,
+  Query,
   Req,
   ServiceUnavailableException,
   UseGuards,
@@ -34,13 +36,46 @@ export class KaraokeSessionController {
 
   @Post()
   @UseGuards(OriginGuard)
-  create(@CurrentUser() user: User, @Body() body: { alias?: unknown }) {
-    return this.sessions.create(user.id, body?.alias);
+  create(
+    @CurrentUser() user: User,
+    @Body() body: { alias?: unknown; clientId?: unknown },
+  ) {
+    return this.sessions.create(user.id, body?.alias, body?.clientId);
   }
 
   @Get('active')
   listActive(@CurrentUser() user: User) {
     return this.sessions.listActive(user.id);
+  }
+
+  @Post('claim-guest')
+  @UseGuards(OriginGuard)
+  async claimGuest(
+    @CurrentUser() user: User,
+    @Body() body: {
+      sessionId?: unknown;
+      hostToken?: unknown;
+      clientId?: unknown;
+      queue?: unknown;
+      performers?: unknown;
+      alias?: unknown;
+      replaceSessionId?: unknown;
+    },
+  ) {
+    const result = await this.sessions.claimGuest(
+      user.id,
+      body?.sessionId,
+      body?.hostToken,
+      body?.clientId,
+      body?.queue,
+      body?.performers,
+      body?.alias,
+      body?.replaceSessionId,
+    );
+    if (result.replacedSessionId) {
+      await this.remoteAuthorization?.invalidateSession(result.replacedSessionId);
+    }
+    return result;
   }
 
   /**
@@ -52,11 +87,13 @@ export class KaraokeSessionController {
   async socketTicket(
     @CurrentUser() user: User,
     @Param('sessionId') sessionId: string,
+    @Query('clientId') clientId: string | undefined,
     @Req() request: Request,
   ) {
     const session = await this.remoteAuthorization?.findActiveSession(
       user.id,
       sessionId,
+      clientId,
     );
     if (!session) {
       throw new ServiceUnavailableException(
@@ -74,13 +111,30 @@ export class KaraokeSessionController {
   }
 
   @Get(':sessionId/queue')
-  queue(@CurrentUser() user: User, @Param('sessionId') sessionId: string) {
-    return this.sessions.getQueue(user.id, sessionId);
+  queue(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+    @Query('clientId') clientId: string | undefined,
+  ) {
+    return this.sessions.getQueue(user.id, sessionId, clientId);
+  }
+
+  @Get(':sessionId/performers')
+  performers(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+    @Query('clientId') clientId: string | undefined,
+  ) {
+    return this.sessions.getPerformers(user.id, sessionId, clientId);
   }
 
   @Get(':sessionId')
-  get(@CurrentUser() user: User, @Param('sessionId') sessionId: string) {
-    return this.sessions.get(user.id, sessionId);
+  get(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+    @Query('clientId') clientId: string | undefined,
+  ) {
+    return this.sessions.get(user.id, sessionId, clientId);
   }
 
   @Put(':sessionId/queue')
@@ -88,18 +142,55 @@ export class KaraokeSessionController {
   replaceQueue(
     @CurrentUser() user: User,
     @Param('sessionId') sessionId: string,
-    @Body() body: { items?: unknown },
+    @Body() body: { items?: unknown; clientId?: unknown },
   ) {
-    return this.sessions.replaceQueue(user.id, sessionId, body?.items);
+    return this.sessions.replaceQueue(
+      user.id,
+      sessionId,
+      body?.items,
+      body?.clientId,
+    );
+  }
+
+  @Put(':sessionId/performers')
+  @UseGuards(OriginGuard)
+  replacePerformers(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+    @Body() body: { performers?: unknown; clientId?: unknown },
+  ) {
+    return this.sessions.replacePerformers(
+      user.id,
+      sessionId,
+      body?.performers,
+      body?.clientId,
+    );
   }
 
   @Post(':sessionId/transfer')
   @UseGuards(OriginGuard)
-  transfer(@CurrentUser() user: User, @Param('sessionId') sessionId: string) {
-    return this.sessions.transfer(user.id, sessionId).then(async (result) => {
-      await this.remoteAuthorization?.invalidateSession(sessionId);
-      return result;
-    });
+  transfer(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+    @Body() body: { includePerformers?: unknown; clientId?: unknown },
+  ) {
+    const includePerformersOption = body?.includePerformers;
+    if (
+      includePerformersOption !== undefined &&
+      typeof includePerformersOption !== 'boolean'
+    ) {
+      throw new BadRequestException('includePerformers must be a boolean.');
+    }
+    const includePerformers =
+      includePerformersOption === undefined
+        ? true
+        : Boolean(includePerformersOption);
+    return this.sessions
+      .transfer(user.id, sessionId, includePerformers, body?.clientId)
+      .then(async (result) => {
+        await this.remoteAuthorization?.invalidateSession(sessionId);
+        return result;
+      });
   }
 
   @Post(':sessionId/heartbeat')
@@ -107,8 +198,22 @@ export class KaraokeSessionController {
   async heartbeat(
     @CurrentUser() user: User,
     @Param('sessionId') sessionId: string,
+    @Body() body: { clientId?: unknown; takeOver?: unknown },
   ) {
-    const result = await this.sessions.heartbeat(user.id, sessionId);
+    const takeOverOption = body?.takeOver;
+    if (takeOverOption !== undefined && typeof takeOverOption !== 'boolean') {
+      throw new BadRequestException('takeOver must be a boolean.');
+    }
+    const takeOver = takeOverOption === true;
+    const result = await this.sessions.heartbeat(
+      user.id,
+      sessionId,
+      body?.clientId,
+      takeOver,
+    );
+    if (takeOver) {
+      await this.remoteAuthorization?.invalidateSession(sessionId);
+    }
     try {
       await this.remoteAuthorization?.renewActiveGrantsForSession(sessionId);
     } catch (error) {
@@ -121,9 +226,16 @@ export class KaraokeSessionController {
 
   @Post(':sessionId/end')
   @UseGuards(OriginGuard)
-  async end(@CurrentUser() user: User, @Param('sessionId') sessionId: string) {
-    const result = await this.sessions.end(user.id, sessionId);
+  async end(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+    @Body() body: { clientId?: unknown },
+  ) {
+    const result = await this.sessions.end(user.id, sessionId, body?.clientId);
     await this.remoteAuthorization?.invalidateSession(sessionId);
+    if (await this.remoteAuthorization?.isClaimedGuestSession(sessionId, user.id)) {
+      await this.remoteAuthorization?.invalidateSession(sessionId, undefined, 'guest');
+    }
     return result;
   }
 
@@ -132,8 +244,13 @@ export class KaraokeSessionController {
   createRemotePairing(
     @CurrentUser() user: User,
     @Param('sessionId') sessionId: string,
+    @Body() body: { clientId?: unknown },
   ) {
-    return this.remoteAuthorization.createPairingToken(user.id, sessionId);
+    return this.remoteAuthorization.createPairingToken(
+      user.id,
+      sessionId,
+      body?.clientId,
+    );
   }
 
   private readCookie(request: Request, name: string): string | undefined {

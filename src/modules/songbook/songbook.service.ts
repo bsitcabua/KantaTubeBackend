@@ -2,7 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { KaraokeSong } from '../karaoke/entities/karaoke-song.entity';
-import { SongbookSearchRequest } from './songbook.dto';
+import {
+  SONGBOOK_RECOMMENDATIONS_LIMIT,
+  SongbookSearchRequest,
+} from './songbook.dto';
 import { SongbookSearchCacheService } from './songbook-search-cache.service';
 import {
   SongbookFiltersResponse,
@@ -10,6 +13,7 @@ import {
   SongbookPaginationResponse,
   SongbookSearchResponse,
   SongbookSongResponse,
+  SongbookRecommendationsResponse,
 } from './songbook.types';
 
 @Injectable()
@@ -20,11 +24,51 @@ export class SongbookService {
     private readonly searchCache: SongbookSearchCacheService,
   ) {}
 
-  async search(request: SongbookSearchRequest): Promise<SongbookSearchResponse> {
-    return this.searchCache.getOrCreateSearch(request, () => this.searchUncached(request)) as Promise<SongbookSearchResponse>;
+  async search(
+    request: SongbookSearchRequest,
+  ): Promise<SongbookSearchResponse> {
+    return this.searchCache.getOrCreateSearch(request, () =>
+      this.searchUncached(request),
+    ) as Promise<SongbookSearchResponse>;
   }
 
-  private async searchUncached(request: SongbookSearchRequest): Promise<SongbookSearchResponse> {
+  async recommendations(
+    excludeVideoIds: readonly string[] = [],
+  ): Promise<SongbookRecommendationsResponse> {
+    const queryBuilder = this.createSongQuery()
+      .where('song.youtubeVideoId IS NOT NULL')
+      .andWhere("song.youtubeVideoId <> ''");
+
+    if (excludeVideoIds.length > 0) {
+      queryBuilder.andWhere(
+        'song.youtubeVideoId NOT IN (:...excludeVideoIds)',
+        { excludeVideoIds },
+      );
+    }
+
+    let songs = await queryBuilder
+      .orderBy('RAND()')
+      .take(SONGBOOK_RECOMMENDATIONS_LIMIT)
+      .getMany();
+
+    // The browser keeps recent recommendation ids to avoid repeats across
+    // reloads. Once that history covers the whole catalog, start a new random
+    // cycle instead of returning an empty first-load recommendation area.
+    if (songs.length === 0 && excludeVideoIds.length > 0) {
+      songs = await this.createSongQuery()
+        .where('song.youtubeVideoId IS NOT NULL')
+        .andWhere("song.youtubeVideoId <> ''")
+        .orderBy('RAND()')
+        .take(SONGBOOK_RECOMMENDATIONS_LIMIT)
+        .getMany();
+    }
+
+    return { data: songs.map((song) => this.toPublicSong(song)) };
+  }
+
+  private async searchUncached(
+    request: SongbookSearchRequest,
+  ): Promise<SongbookSearchResponse> {
     const queryBuilder = this.createSongQuery();
     this.applyFilters(queryBuilder, request);
 
@@ -81,11 +125,17 @@ export class SongbookService {
     };
   }
 
-  async browseArtists(request: SongbookSearchRequest): Promise<SongbookArtistBrowseResponse> {
-    return this.searchCache.getOrCreateSearch(request, () => this.browseArtistsUncached(request)) as Promise<SongbookArtistBrowseResponse>;
+  async browseArtists(
+    request: SongbookSearchRequest,
+  ): Promise<SongbookArtistBrowseResponse> {
+    return this.searchCache.getOrCreateSearch(request, () =>
+      this.browseArtistsUncached(request),
+    ) as Promise<SongbookArtistBrowseResponse>;
   }
 
-  private async browseArtistsUncached(request: SongbookSearchRequest): Promise<SongbookArtistBrowseResponse> {
+  private async browseArtistsUncached(
+    request: SongbookSearchRequest,
+  ): Promise<SongbookArtistBrowseResponse> {
     const queryBuilder = this.songs
       .createQueryBuilder('song')
       .select('song.artist', 'artist')
@@ -189,16 +239,18 @@ export class SongbookService {
   }
 
   private createSongQuery(): SelectQueryBuilder<KaraokeSong> {
-    return this.songs.createQueryBuilder('song').select([
-      'song.id',
-      'song.title',
-      'song.artist',
-      'song.language',
-      'song.category',
-      'song.youtubeVideoId',
-      'song.source',
-      'song.isVerifiedKaraoke',
-    ]);
+    return this.songs
+      .createQueryBuilder('song')
+      .select([
+        'song.id',
+        'song.title',
+        'song.artist',
+        'song.language',
+        'song.category',
+        'song.youtubeVideoId',
+        'song.source',
+        'song.isVerifiedKaraoke',
+      ]);
   }
 
   private applyFilters(
@@ -206,13 +258,19 @@ export class SongbookService {
     request: SongbookSearchRequest,
   ): void {
     if (request.language) {
-      queryBuilder.andWhere('song.language = :language', { language: request.language });
+      queryBuilder.andWhere('song.language = :language', {
+        language: request.language,
+      });
     }
     if (request.category) {
-      queryBuilder.andWhere('song.category = :category', { category: request.category });
+      queryBuilder.andWhere('song.category = :category', {
+        category: request.category,
+      });
     }
     if (request.artist) {
-      queryBuilder.andWhere('song.artist = :artist', { artist: request.artist });
+      queryBuilder.andWhere('song.artist = :artist', {
+        artist: request.artist,
+      });
     }
   }
 
@@ -240,7 +298,8 @@ export class SongbookService {
       .select('COUNT(DISTINCT song.artist)', 'total')
       .where("song.artist IS NOT NULL AND song.artist <> ''");
     this.applyFilters(queryBuilder, request);
-    if (includeLetter) this.applyBrowseLetter(queryBuilder, 'song.artist', request.letter);
+    if (includeLetter)
+      this.applyBrowseLetter(queryBuilder, 'song.artist', request.letter);
     const result = await queryBuilder.getRawOne<{ total: string }>();
     return Number(result?.total ?? 0);
   }

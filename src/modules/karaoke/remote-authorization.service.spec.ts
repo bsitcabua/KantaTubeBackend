@@ -84,9 +84,10 @@ describe('RemoteAuthorizationService', () => {
     expect(invitation.expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('uses the configured pairing TTL and creates a fixed grant TTL at approval', async () => {
+  it('uses separate pairing-request and approved-grant TTLs', async () => {
     const { service, pairingSessions, grants } = createService({
       REMOTE_PAIRING_TOKEN_SECONDS: '60',
+      REMOTE_REQUEST_EXPIRY_SECONDS: '60',
       REMOTE_GRANT_LIFETIME_HOURS: '1',
     });
     const pairingStartedAt = Date.now();
@@ -107,10 +108,17 @@ describe('RemoteAuthorizationService', () => {
       consumedAt: null,
       expiresAt: new Date(Date.now() + 60_000),
     });
+    const pendingStartedAt = Date.now();
     const pending = await service.createPendingRemote(
       invitation.token,
       deviceId,
       'Phone',
+    );
+    expect(pending.grant.expiresAt.getTime()).toBeGreaterThanOrEqual(
+      pendingStartedAt,
+    );
+    expect(pending.grant.expiresAt.getTime()).toBeLessThanOrEqual(
+      Date.now() + 60_000,
     );
     grants.findOne = jest.fn().mockResolvedValue(pending.grant);
     const approved = await service.approveRemote(sessionId, pending.grant.id);
@@ -140,6 +148,38 @@ describe('RemoteAuthorizationService', () => {
         remoteHostSessionId: 'host-id',
       }),
     );
+  });
+
+  it('resolves a claimed guest-route grant to the Host account library', async () => {
+    const { service, grants, hostSessions, sessions } = createService();
+    const owner = { id: ownerId, status: 'active' };
+    const claimedHost = {
+      id: sessionId,
+      claimedOwnerId: ownerId,
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    const claimedSession = { ...activeSession, owner };
+    const grant = {
+      id: 'grant-id',
+      remoteHostSessionId: sessionId,
+      karaokeSessionId: null,
+      deviceId,
+      status: KaraokeRemoteGrantStatus.APPROVED,
+      expiresAt: new Date(Date.now() + 60_000),
+    } as KaraokeRemoteGrant;
+
+    grants.findOne = jest.fn().mockResolvedValue(grant);
+    hostSessions.findOne = jest.fn().mockResolvedValue(claimedHost);
+    sessions.findOne = jest.fn().mockResolvedValue(claimedSession);
+
+    await expect(
+      service.resolveLibraryOwner(
+        sessionId,
+        deviceId,
+        'grant-token-value-123456789012345678901234567890',
+      ),
+    ).resolves.toEqual(owner);
   });
 
   it('binds an anonymous pairing request to the host capability', async () => {

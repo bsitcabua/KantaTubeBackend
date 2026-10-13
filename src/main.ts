@@ -21,7 +21,14 @@ async function bootstrap() {
   app.enableCors({
     origin: ALLOWED_ORIGINS,
     methods: 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-    allowedHeaders: 'Content-Type, Authorization, X-KantaTube-Visitor-ID',
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-KantaTube-Visitor-ID',
+      'X-KantaTube-Remote-Session',
+      'X-KantaTube-Remote-Device',
+      'X-KantaTube-Remote-Grant',
+    ],
     credentials: true,
   });
 

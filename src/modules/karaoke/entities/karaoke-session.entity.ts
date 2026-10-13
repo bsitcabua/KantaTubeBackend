@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { KaraokeQueueItem } from './karaoke-queue-item.entity';
+import { KaraokeSessionPerformer } from './karaoke-session-performer.entity';
 
 export enum KaraokeSessionStatus {
   ACTIVE = 'active',
@@ -48,6 +49,9 @@ export class KaraokeSession {
   @Column({ type: 'datetime' })
   leaseExpiresAt: Date;
 
+  @Column({ type: 'char', length: 36, nullable: true })
+  clientId: string | null;
+
   @Column({ type: 'datetime', nullable: true })
   endedAt: Date | null;
 
@@ -65,4 +69,7 @@ export class KaraokeSession {
 
   @OneToMany(() => KaraokeQueueItem, (item) => item.session)
   queueItems: KaraokeQueueItem[];
+
+  @OneToMany(() => KaraokeSessionPerformer, (performer) => performer.session)
+  performers: KaraokeSessionPerformer[];
 }

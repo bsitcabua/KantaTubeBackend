@@ -1,12 +1,15 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   parseSongbookId,
+  parseSongbookRecommendationExclusions,
   parseSongbookSearchRequest,
 } from './songbook.dto';
 
 describe('Songbook DTO parsing', () => {
   it('uses browsing defaults and accepts short legitimate queries', () => {
-    expect(parseSongbookSearchRequest('G', ' English ', 'OPM', undefined, undefined)).toEqual({
+    expect(
+      parseSongbookSearchRequest('G', ' English ', 'OPM', undefined, undefined),
+    ).toEqual({
       query: 'G',
       language: 'English',
       category: 'OPM',
@@ -16,7 +19,15 @@ describe('Songbook DTO parsing', () => {
       page: 1,
       limit: 20,
     });
-    expect(parseSongbookSearchRequest('', undefined, undefined, undefined, undefined)).toEqual({
+    expect(
+      parseSongbookSearchRequest(
+        '',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      ),
+    ).toEqual({
       query: undefined,
       language: undefined,
       category: undefined,
@@ -50,22 +61,62 @@ describe('Songbook DTO parsing', () => {
       limit: 20,
     });
     expect(() =>
-      parseSongbookSearchRequest(undefined, undefined, undefined, undefined, undefined, 'artists', '12'),
+      parseSongbookSearchRequest(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'artists',
+        '12',
+      ),
     ).toThrow(BadRequestException);
     expect(
-      parseSongbookSearchRequest(undefined, undefined, undefined, undefined, undefined, 'songs', '#'),
+      parseSongbookSearchRequest(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'songs',
+        '#',
+      ),
     ).toMatchObject({ browse: 'songs', letter: '#' });
   });
 
   it('rejects invalid pagination and oversized query values', () => {
-    expect(() => parseSongbookSearchRequest('x', undefined, undefined, '0', undefined)).toThrow(BadRequestException);
-    expect(() => parseSongbookSearchRequest('x', undefined, undefined, undefined, '101')).toThrow(BadRequestException);
-    expect(() => parseSongbookSearchRequest('x'.repeat(101), undefined, undefined, undefined, undefined)).toThrow(BadRequestException);
+    expect(() =>
+      parseSongbookSearchRequest('x', undefined, undefined, '0', undefined),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      parseSongbookSearchRequest('x', undefined, undefined, undefined, '101'),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      parseSongbookSearchRequest(
+        'x'.repeat(101),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      ),
+    ).toThrow(BadRequestException);
   });
 
   it('validates unsigned song IDs', () => {
     expect(parseSongbookId('1002')).toBe(1002);
     expect(() => parseSongbookId('0')).toThrow(BadRequestException);
     expect(() => parseSongbookId('abc')).toThrow(BadRequestException);
+  });
+
+  it('parses and de-duplicates recommendation exclusions', () => {
+    expect(
+      parseSongbookRecommendationExclusions('abc123,abc123,xyz_456'),
+    ).toEqual(['abc123', 'xyz_456']);
+    expect(() => parseSongbookRecommendationExclusions('invalid id')).toThrow(
+      BadRequestException,
+    );
+    expect(() => parseSongbookRecommendationExclusions('a'.repeat(12))).toThrow(
+      BadRequestException,
+    );
   });
 });

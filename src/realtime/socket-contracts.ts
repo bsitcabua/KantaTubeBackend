@@ -10,6 +10,9 @@ export const REMOTE_COMMAND_EVENTS = [
   'clearAllPerformers',
   'pauseVideo',
   'playVideo',
+  'restartVideo',
+  'moveReservedSong',
+  'removeReservedSong',
   'toggleScore',
   'toggleThemeMode',
   'updatePrimaryColor',
@@ -23,6 +26,7 @@ export const MAIN_RESPONSE_EVENTS = [
   'videoStatus',
   'searchResults',
   'queueError',
+  'queueDuplicateWarning',
   'performers',
   'toggleScoreFromMain',
   'toggleThemeModeFromMain',
@@ -46,6 +50,20 @@ export interface RemoteConnectionRequest {
   requestId: string;
   deviceId: string;
   device: string;
+  displayName: string;
+  expiresAt: string;
+}
+
+export interface RemoteConnectionPending {
+  sessionId: string;
+  requestId: string;
+  sessionKind: 'karaoke' | 'guest';
+  displayName: string;
+  expiresAt: string;
+}
+
+export interface ActiveRemoteCountPayload {
+  count: number;
 }
 
 export type SocketErrorCode =
