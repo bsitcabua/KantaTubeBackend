@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -45,13 +46,20 @@ export interface ApprovedRemote {
   grantToken: string;
 }
 
+export interface RemotePairingTarget {
+  sessionId: string;
+  sessionKind: RemoteSessionKind;
+}
+
 @Injectable()
 export class RemoteAuthorizationService {
   static readonly defaultPairingTokenSeconds = 10 * 60;
+  static readonly defaultRemoteRequestSeconds = 2 * 60;
   static readonly defaultGrantHours = 12;
 
   private readonly logger = new Logger(RemoteAuthorizationService.name);
   private readonly pairingTokenMs: number;
+  private readonly remoteRequestLifetimeMs: number;
   private readonly grantLifetimeMs: number;
   private readonly sessionInvalidationListeners = new Set<
     (sessionId: string, sessionKind: RemoteSessionKind) => void
@@ -74,6 +82,12 @@ export class RemoteAuthorizationService {
       60,
       15 * 60,
     );
+    const remoteRequestSeconds = this.readNumber(
+      'REMOTE_REQUEST_EXPIRY_SECONDS',
+      RemoteAuthorizationService.defaultRemoteRequestSeconds,
+      30,
+      15 * 60,
+    );
     const grantHours = this.readNumber(
       'REMOTE_GRANT_LIFETIME_HOURS',
       RemoteAuthorizationService.defaultGrantHours,
@@ -81,6 +95,7 @@ export class RemoteAuthorizationService {
       24 * 7,
     );
     this.pairingTokenMs = pairingSeconds * 1000;
+    this.remoteRequestLifetimeMs = remoteRequestSeconds * 1000;
     this.grantLifetimeMs = grantHours * 60 * 60 * 1000;
   }
 
@@ -164,6 +179,7 @@ export class RemoteAuthorizationService {
     pairingToken: unknown,
     deviceId: string,
     deviceLabel: string,
+    displayName: unknown = deviceLabel,
   ): Promise<PendingRemote> {
     if (!this.isDeviceId(deviceId)) {
       throw this.remoteError(
@@ -178,45 +194,16 @@ export class RemoteAuthorizationService {
       );
     }
     const now = new Date();
-    const pairing = await this.pairingSessions.findOne({
-      where: {
-        tokenHash: this.hash(pairingToken),
-        consumedAt: IsNull(),
-        expiresAt: MoreThan(now),
-      },
-    });
-    if (!pairing) {
-      const expired = await this.pairingSessions.findOne({
-        where: { tokenHash: this.hash(pairingToken) },
-      });
-      throw this.pairingError(
-        expired ? 'PAIR_TOKEN_EXPIRED' : 'PAIR_TOKEN_INVALID',
-        expired
-          ? 'This pairing invitation has expired.'
-          : 'The pairing invitation is invalid.',
-      );
-    }
-
-    const sessionKind: RemoteSessionKind = pairing.remoteHostSessionId
-      ? 'guest'
-      : 'karaoke';
-    const sessionId =
-      sessionKind === 'guest'
-        ? pairing.remoteHostSessionId
-        : pairing.karaokeSessionId;
-    if (!sessionId) {
-      throw this.pairingError(
-        'PAIR_TOKEN_INVALID',
-        'The pairing invitation is invalid.',
-      );
-    }
-    await this.assertActiveRemoteSession(sessionId, sessionKind);
+    const displayNameValue = this.requireRemoteDisplayName(displayName);
+    const target = await this.resolvePairingTarget(pairingToken, now);
+    const { sessionId, sessionKind } = target;
 
     let grant = await this.grants.findOne({
       where: {
         ...this.sessionScope(sessionId, sessionKind),
         deviceId,
         status: KaraokeRemoteGrantStatus.PENDING,
+        expiresAt: MoreThan(now),
       },
     });
     if (!grant) {
@@ -227,16 +214,25 @@ export class RemoteAuthorizationService {
         deviceLabel: deviceLabel.slice(0, 100),
         status: KaraokeRemoteGrantStatus.PENDING,
         grantTokenHash: null,
-        expiresAt: new Date(now.getTime() + this.grantLifetimeMs),
+        expiresAt: new Date(now.getTime() + this.remoteRequestLifetimeMs),
         approvedAt: null,
         revokedAt: null,
+        displayName: displayNameValue,
       });
+      grant = await this.grants.save(grant);
+    } else {
+      grant.displayName = displayNameValue;
+      grant.deviceLabel = deviceLabel.slice(0, 100);
       grant = await this.grants.save(grant);
     }
     this.logger.log(
       `Remote pairing request ${this.safeId(grant.id)} received for session ${this.safeId(sessionId)}`,
     );
     return { grant, sessionId, sessionKind };
+  }
+
+  async validatePairingToken(pairingToken: unknown): Promise<RemotePairingTarget> {
+    return this.resolvePairingTarget(pairingToken, new Date());
   }
 
   async approveRemote(
@@ -249,6 +245,7 @@ export class RemoteAuthorizationService {
         ...this.sessionScope(sessionId, sessionKind),
         id: requestId,
         status: KaraokeRemoteGrantStatus.PENDING,
+        expiresAt: MoreThan(new Date()),
       },
     });
     if (!grant)
@@ -277,6 +274,7 @@ export class RemoteAuthorizationService {
         ...this.sessionScope(sessionId, sessionKind),
         id: requestId,
         status: KaraokeRemoteGrantStatus.PENDING,
+        expiresAt: MoreThan(new Date()),
       },
     });
     if (!grant)
@@ -626,6 +624,75 @@ export class RemoteAuthorizationService {
     });
     const saved = await this.pairingSessions.save(record);
     return { token, sessionId, expiresAt: saved.expiresAt };
+  }
+
+  private async resolvePairingTarget(
+    pairingToken: unknown,
+    now: Date,
+  ): Promise<RemotePairingTarget> {
+    if (typeof pairingToken !== 'string' || pairingToken.length < 32) {
+      throw this.pairingError(
+        'PAIR_TOKEN_INVALID',
+        'The pairing invitation is invalid.',
+      );
+    }
+    const pairing = await this.pairingSessions.findOne({
+      where: {
+        tokenHash: this.hash(pairingToken),
+        consumedAt: IsNull(),
+        expiresAt: MoreThan(now),
+      },
+    });
+    if (!pairing) {
+      const expired = await this.pairingSessions.findOne({
+        where: { tokenHash: this.hash(pairingToken) },
+      });
+      throw this.pairingError(
+        expired ? 'PAIR_TOKEN_EXPIRED' : 'PAIR_TOKEN_INVALID',
+        expired
+          ? 'This pairing invitation has expired.'
+          : 'The pairing invitation is invalid.',
+      );
+    }
+
+    const sessionKind: RemoteSessionKind = pairing.remoteHostSessionId
+      ? 'guest'
+      : 'karaoke';
+    const sessionId =
+      sessionKind === 'guest'
+        ? pairing.remoteHostSessionId
+        : pairing.karaokeSessionId;
+    if (!sessionId) {
+      throw this.pairingError(
+        'PAIR_TOKEN_INVALID',
+        'The pairing invitation is invalid.',
+      );
+    }
+    await this.assertActiveRemoteSession(sessionId, sessionKind);
+    return { sessionId, sessionKind };
+  }
+
+  private requireRemoteDisplayName(value: unknown): string {
+    const displayName = typeof value === 'string' ? value.trim() : '';
+    if (!displayName) {
+      throw new BadRequestException({
+        code: 'INVALID_PAYLOAD',
+        message: 'Enter a name before requesting access.',
+      });
+    }
+    if (displayName.length < 2) {
+      throw new BadRequestException({
+        code: 'INVALID_PAYLOAD',
+        message: 'Name must be at least 2 characters.',
+      });
+    }
+    if (displayName.length > 30) {
+      throw new BadRequestException({
+        code: 'INVALID_PAYLOAD',
+        message: 'Name must be 30 characters or less.',
+      });
+    }
+    return displayName;
   }
 
   /**

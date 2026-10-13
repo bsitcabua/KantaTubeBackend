@@ -84,9 +84,10 @@ describe('RemoteAuthorizationService', () => {
     expect(invitation.expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('uses the configured pairing TTL and creates a fixed grant TTL at approval', async () => {
+  it('uses separate pairing-request and approved-grant TTLs', async () => {
     const { service, pairingSessions, grants } = createService({
       REMOTE_PAIRING_TOKEN_SECONDS: '60',
+      REMOTE_REQUEST_EXPIRY_SECONDS: '60',
       REMOTE_GRANT_LIFETIME_HOURS: '1',
     });
     const pairingStartedAt = Date.now();
@@ -107,10 +108,17 @@ describe('RemoteAuthorizationService', () => {
       consumedAt: null,
       expiresAt: new Date(Date.now() + 60_000),
     });
+    const pendingStartedAt = Date.now();
     const pending = await service.createPendingRemote(
       invitation.token,
       deviceId,
       'Phone',
+    );
+    expect(pending.grant.expiresAt.getTime()).toBeGreaterThanOrEqual(
+      pendingStartedAt,
+    );
+    expect(pending.grant.expiresAt.getTime()).toBeLessThanOrEqual(
+      Date.now() + 60_000,
     );
     grants.findOne = jest.fn().mockResolvedValue(pending.grant);
     const approved = await service.approveRemote(sessionId, pending.grant.id);

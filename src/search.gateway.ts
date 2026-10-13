@@ -38,8 +38,11 @@ interface RemoteContext {
   sessionKind: RemoteSessionKind;
   deviceId: string;
   grantId: string;
+  displayName?: string;
+  expiresAt?: string;
+  pairingToken?: string;
   accountId?: string;
-  state: 'pending' | 'approved';
+  state: 'unrequested' | 'pending' | 'approved';
 }
 
 type SocketContext = MainContext | RemoteContext;
@@ -87,6 +90,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly mainSocketBySession = new Map<string, string>();
   private readonly remoteSearchRoutes = new Map<string, RemoteSearchRoute>();
   private readonly remoteReserveRoutes = new Map<string, RemoteReserveRoute>();
+  private readonly remoteAccessRequestsInFlight = new Set<string>();
   private remoteSearchRouteSequence = 0;
   private remoteReserveRouteSequence = 0;
   private readonly remoteSearchRouteTtlMs = 60_000;
@@ -117,6 +121,8 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const deviceId = this.stringValue(auth.deviceId, 36);
       const pairingToken = this.stringValue(auth.pairingToken, 256);
       const grantToken = this.stringValue(auth.grantToken, 256);
+      const requestRemoteAccess = auth.requestRemoteAccess === true || auth.requestRemoteAccess === 'true';
+      const remoteDisplayName = this.stringValue(auth.remoteDisplayName, 30);
       const hostToken = this.stringValue(auth.hostToken, 256);
       const clientId = this.stringValue(auth.clientId, 36);
       const socketTicket = this.stringValue(auth.socketTicket, 4096);
@@ -127,7 +133,11 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
             'REMOTE_NOT_AUTHORIZED',
             'Remote device identity is invalid.',
           );
-        await this.connectPendingRemote(client, pairingToken, deviceId);
+        if (requestRemoteAccess) {
+          await this.connectPendingRemote(client, pairingToken, deviceId, remoteDisplayName);
+        } else {
+          await this.connectPairingRemote(client, pairingToken, deviceId);
+        }
         return;
       }
       if (grantToken && sessionId && deviceId) {
@@ -279,6 +289,88 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return { ok: true };
     } catch (error) {
       return this.fail(client, ...this.errorTuple(error));
+    }
+  }
+
+  @SubscribeMessage('requestRemoteAccess')
+  async requestRemoteAccess(
+    client: Socket,
+    payload: UnknownRecord,
+  ): Promise<SocketAck> {
+    const context = this.context(client);
+    if (
+      !context ||
+      context.kind !== 'remote' ||
+      context.state !== 'unrequested' ||
+      !context.pairingToken
+    ) {
+      return this.fail(
+        client,
+        'REMOTE_PENDING',
+        'This remote access request is already pending or connected.',
+      );
+    }
+    if (this.remoteAccessRequestsInFlight.has(client.id)) {
+      return this.fail(
+        client,
+        'REMOTE_PENDING',
+        'This remote access request is already being submitted.',
+      );
+    }
+    const displayName = typeof payload?.displayName === 'string'
+      ? payload.displayName.trim()
+      : '';
+    if (!displayName) {
+      return this.fail(
+        client,
+        'INVALID_PAYLOAD',
+        'Enter a name before requesting access.',
+      );
+    }
+    if (displayName.length < 2)
+      return this.fail(client, 'INVALID_PAYLOAD', 'Name must be at least 2 characters.');
+    if (displayName.length > 30)
+      return this.fail(client, 'INVALID_PAYLOAD', 'Name must be 30 characters or less.');
+    this.remoteAccessRequestsInFlight.add(client.id);
+    try {
+      const pending = await this.authorization().createPendingRemote(
+        context.pairingToken,
+        context.deviceId,
+        this.deviceLabel(client),
+        displayName,
+      );
+      this.disconnectDuplicateRemote(
+        client,
+        context.deviceId,
+        pending.sessionId,
+        pending.sessionKind,
+      );
+      client.data.kantaTube = {
+        ...context,
+        sessionId: pending.sessionId,
+        sessionKind: pending.sessionKind,
+        grantId: pending.grant.id,
+        displayName: pending.grant.displayName ?? displayName,
+        expiresAt: pending.grant.expiresAt.toISOString(),
+        state: 'pending',
+      } satisfies RemoteContext;
+      client.emit('remoteConnectionPending', {
+        sessionId: pending.sessionId,
+        requestId: pending.grant.id,
+        sessionKind: pending.sessionKind,
+        displayName: pending.grant.displayName ?? displayName,
+        expiresAt: pending.grant.expiresAt.toISOString(),
+      });
+      const mainId = this.mainSocketBySession.get(
+        this.sessionKey(pending.sessionId, pending.sessionKind),
+      );
+      if (mainId)
+        this.notifyPendingRemote(this.server.sockets.sockets.get(mainId), client);
+      return { ok: true };
+    } catch (error) {
+      return this.fail(client, ...this.errorTuple(error));
+    } finally {
+      this.remoteAccessRequestsInFlight.delete(client.id);
     }
   }
 
@@ -605,11 +697,13 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client: Socket,
     pairingToken: string,
     deviceId: string,
+    displayName: string,
   ): Promise<void> {
     const pending = await this.authorization().createPendingRemote(
       pairingToken,
       deviceId,
       this.deviceLabel(client),
+      displayName,
     );
     this.disconnectDuplicateRemote(
       client,
@@ -623,18 +717,43 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       sessionKind: pending.sessionKind,
       deviceId,
       grantId: pending.grant.id,
+      displayName: pending.grant.displayName ?? displayName,
+      expiresAt: pending.grant.expiresAt.toISOString(),
       state: 'pending',
     } satisfies RemoteContext;
     client.emit('remoteConnectionPending', {
       sessionId: pending.sessionId,
       requestId: pending.grant.id,
       sessionKind: pending.sessionKind,
+      displayName: pending.grant.displayName ?? displayName,
+      expiresAt: pending.grant.expiresAt.toISOString(),
     });
     const mainId = this.mainSocketBySession.get(
       this.sessionKey(pending.sessionId, pending.sessionKind),
     );
     if (mainId)
       this.notifyPendingRemote(this.server.sockets.sockets.get(mainId), client);
+  }
+
+  private async connectPairingRemote(
+    client: Socket,
+    pairingToken: string,
+    deviceId: string,
+  ): Promise<void> {
+    const target = await this.authorization().validatePairingToken(pairingToken);
+    client.data.kantaTube = {
+      kind: 'remote',
+      sessionId: target.sessionId,
+      sessionKind: target.sessionKind,
+      deviceId,
+      grantId: '',
+      pairingToken,
+      state: 'unrequested',
+    } satisfies RemoteContext;
+    client.emit('remotePairingReady', {
+      sessionId: target.sessionId,
+      sessionKind: target.sessionKind,
+    });
   }
 
   private async connectApprovedRemote(
@@ -664,6 +783,8 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       sessionKind,
       deviceId,
       grantId: grant.id,
+      displayName: grant.displayName ?? undefined,
+      expiresAt: grant.expiresAt.toISOString(),
       accountId,
       state: 'approved',
     } satisfies RemoteContext;
@@ -1096,6 +1217,8 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       requestId: context.grantId,
       deviceId: context.deviceId,
       device: this.deviceLabel(remote),
+      displayName: context.displayName || 'Remote device',
+      expiresAt: context.expiresAt || new Date().toISOString(),
     });
   }
 
@@ -1144,9 +1267,34 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private deviceLabel(client: Socket): string {
     const userAgent = client.handshake.headers?.['user-agent'];
     if (typeof userAgent !== 'string') return 'Remote device';
-    return /mobile|android|iphone|ipad/i.test(userAgent)
-      ? 'Mobile remote'
-      : 'Browser remote';
+    const isMobile = /mobile|android|iphone|ipad/i.test(userAgent);
+    const browser = /edg\//i.test(userAgent)
+      ? 'Edge'
+      : /samsungbrowser/i.test(userAgent)
+        ? 'Samsung Internet'
+        : /chrome|crios/i.test(userAgent)
+          ? 'Chrome'
+          : /firefox|fxios/i.test(userAgent)
+            ? 'Firefox'
+            : /safari/i.test(userAgent) && !/chrome|crios|android/i.test(userAgent)
+              ? 'Safari'
+              : '';
+    const platform = /android/i.test(userAgent)
+      ? 'Android'
+      : /iphone/i.test(userAgent)
+        ? 'iPhone'
+        : /ipad/i.test(userAgent)
+          ? 'iPad'
+          : /windows/i.test(userAgent)
+            ? 'Windows'
+            : /mac os/i.test(userAgent)
+              ? 'Mac'
+              : /linux/i.test(userAgent)
+                ? 'Linux'
+                : '';
+    if (browser && platform) return `${browser} on ${platform}`;
+    if (browser) return browser;
+    return isMobile ? 'Mobile remote' : 'Browser remote';
   }
 
   private createRemoteSearchRoute(client: Socket, context: RemoteContext): string {

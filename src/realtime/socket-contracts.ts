@@ -50,6 +50,16 @@ export interface RemoteConnectionRequest {
   requestId: string;
   deviceId: string;
   device: string;
+  displayName: string;
+  expiresAt: string;
+}
+
+export interface RemoteConnectionPending {
+  sessionId: string;
+  requestId: string;
+  sessionKind: 'karaoke' | 'guest';
+  displayName: string;
+  expiresAt: string;
 }
 
 export interface ActiveRemoteCountPayload {

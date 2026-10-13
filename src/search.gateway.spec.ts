@@ -17,6 +17,7 @@ describe('SearchGateway', () => {
     findActiveSession: jest.Mock;
     isClaimedGuestSession: jest.Mock;
     authorizeGuestHost: jest.Mock;
+    validatePairingToken: jest.Mock;
     createPendingRemote: jest.Mock;
     approveRemote: jest.Mock;
     rejectRemote: jest.Mock;
@@ -38,11 +39,12 @@ describe('SearchGateway', () => {
       findActiveSession: jest.fn().mockResolvedValue({ id: sessionId }),
       isClaimedGuestSession: jest.fn().mockResolvedValue(false),
       authorizeGuestHost: jest.fn().mockResolvedValue({ id: sessionId }),
-      createPendingRemote: jest.fn().mockResolvedValue({
+      validatePairingToken: jest.fn().mockResolvedValue({ sessionId, sessionKind: 'karaoke' }),
+      createPendingRemote: jest.fn().mockImplementation(async (_pairingToken: string, requestedDeviceId: string, _deviceLabel: string, requestedDisplayName: string) => ({
         sessionId,
         sessionKind: 'karaoke',
-        grant: { id: grantId, deviceId },
-      }),
+        grant: { id: grantId, deviceId: requestedDeviceId, displayName: requestedDisplayName || 'Test Remote', expiresAt: new Date(Date.now() + 60_000) },
+      })),
       approveRemote: jest.fn().mockResolvedValue({
         grant: { id: grantId, deviceId },
         grantToken: 'grant-token-value',
@@ -68,11 +70,16 @@ describe('SearchGateway', () => {
     authFields: Record<string, string>,
     id: string,
   ): Socket {
+    const handshakeAuth = { ...authFields };
+    if (handshakeAuth.pairingToken && handshakeAuth.requestRemoteAccess === undefined) {
+      handshakeAuth.requestRemoteAccess = 'true';
+      handshakeAuth.remoteDisplayName = 'Test Remote';
+    }
     const client = {
       id,
       data: {},
       handshake: {
-        auth: authFields,
+        auth: handshakeAuth,
         headers: {
           cookie: 'kantatube_session=session-cookie',
           'user-agent': 'test browser',
@@ -199,6 +206,10 @@ describe('SearchGateway', () => {
       'remoteConnectionRequest',
       expect.objectContaining({ requestId: grantId, deviceId }),
     );
+    expect(remote.emit).toHaveBeenCalledWith(
+      'remoteConnectionPending',
+      expect.objectContaining({ expiresAt: expect.any(String) }),
+    );
     const pendingResult = await gateway.onSearch(remote, {
       event: 'onSearch',
       data: { search: 'test' },
@@ -208,6 +219,36 @@ describe('SearchGateway', () => {
       error: { code: 'REMOTE_PENDING' },
     });
     expect(main.emit).not.toHaveBeenCalledWith('onSearch', expect.anything());
+  });
+
+  it('validates a pairing link without notifying the host until the remote requests access', async () => {
+    const main = createClient({ sessionId }, 'main-socket');
+    const remote = createClient(
+      {
+        pairingToken: 'pairing-token-value-123456789012345678901234567890',
+        deviceId,
+        requestRemoteAccess: 'false',
+      },
+      'remote-socket',
+    );
+
+    await gateway.handleConnection(main);
+    await gateway.handleConnection(remote);
+
+    expect(authorization.validatePairingToken).toHaveBeenCalled();
+    expect(main.emit).not.toHaveBeenCalledWith('remoteConnectionRequest', expect.anything());
+
+    const result = await gateway.requestRemoteAccess(remote, { displayName: 'Elvin' });
+
+    expect(result).toEqual({ ok: true });
+    expect(main.emit).toHaveBeenCalledWith(
+      'remoteConnectionRequest',
+      expect.objectContaining({ displayName: 'Elvin', expiresAt: expect.any(String) }),
+    );
+    expect(remote.emit).toHaveBeenCalledWith(
+      'remoteConnectionPending',
+      expect.objectContaining({ displayName: 'Elvin', expiresAt: expect.any(String) }),
+    );
   });
 
   it('reports only approved connected remotes in the active count', async () => {
@@ -241,6 +282,7 @@ describe('SearchGateway', () => {
         grant: {
           id: `grant-${requestedDeviceId.slice(-1)}`,
           deviceId: requestedDeviceId,
+          expiresAt: new Date(Date.now() + 60_000),
         },
       }),
     );
