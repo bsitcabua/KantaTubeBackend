@@ -159,7 +159,7 @@ export class YoutubeService {
         );
 
         if (alias !== credential.alias) {
-          this.logger.log(
+          this.logger.debug(
             `YouTube search succeeded using fallback server alias ${alias}.`,
           );
         }
@@ -351,7 +351,7 @@ export class YoutubeService {
         });
       }
 
-      this.logger.log(
+      this.logger.debug(
         `YouTube search.list completed with ${payload.items.length} result(s).`,
       );
       return payload;
