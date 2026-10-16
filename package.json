@@ -1,6 +1,7 @@
 {
   "name": "kanta-tube-backend",
   "version": "0.0.1",
+  "packageManager": "pnpm@12.11.2",
   "description": "",
   "author": "",
   "private": true,
