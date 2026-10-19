@@ -1,0 +1,41 @@
+4a86a0b5ae30184257bfc406fb121bab
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const testing_1 = require("@nestjs/testing");
+const request = require("supertest");
+const bug_report_controller_1 = require("./bug-report/bug-report.controller");
+const bug_report_service_1 = require("./bug-report/bug-report.service");
+const visitors_controller_1 = require("./visitors/visitors.controller");
+const visitors_service_1 = require("./visitors/visitors.service");
+const search_logs_controller_1 = require("./search-logs/search-logs.controller");
+const search_logs_service_1 = require("./search-logs/search-logs.service");
+const rate_limiter_service_1 = require("../common/rate-limit/rate-limiter.service");
+describe('sensitive collection endpoints', () => {
+    let app;
+    beforeEach(async () => {
+        const module = await testing_1.Test.createTestingModule({
+            controllers: [
+                visitors_controller_1.VisitorsController,
+                search_logs_controller_1.SearchLogsController,
+                bug_report_controller_1.BugReportController,
+            ],
+            providers: [
+                { provide: visitors_service_1.VisitorsService, useValue: {} },
+                { provide: search_logs_service_1.SearchLogsService, useValue: {} },
+                { provide: bug_report_service_1.BugReportService, useValue: {} },
+                { provide: rate_limiter_service_1.RateLimiterService, useValue: {} },
+            ],
+        }).compile();
+        app = module.createNestApplication();
+        await app.init();
+    });
+    afterEach(async () => {
+        await app.close();
+    });
+    it('does not expose visitor, search-log, or bug-report collections anonymously', async () => {
+        await request(app.getHttpServer()).get('/visitors').expect(404);
+        await request(app.getHttpServer()).get('/search-logs').expect(404);
+        await request(app.getHttpServer()).get('/bug-report').expect(404);
+    });
+});
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxzZW5zaXRpdmUtcmVhZC1lbmRwb2ludHMuc3BlYy50cyIsIm1hcHBpbmdzIjoiOztBQUNBLDZDQUF1QztBQUN2QyxxQ0FBcUM7QUFDckMsOEVBQXlFO0FBQ3pFLHdFQUFtRTtBQUNuRSx3RUFBb0U7QUFDcEUsa0VBQThEO0FBQzlELGlGQUE0RTtBQUM1RSwyRUFBc0U7QUFDdEUsb0ZBQStFO0FBRS9FLFFBQVEsQ0FBQyxnQ0FBZ0MsRUFBRSxHQUFHLEVBQUU7SUFDOUMsSUFBSSxHQUFxQixDQUFDO0lBRTFCLFVBQVUsQ0FBQyxLQUFLLElBQUksRUFBRTtRQUNwQixNQUFNLE1BQU0sR0FBRyxNQUFNLGNBQUksQ0FBQyxtQkFBbUIsQ0FBQztZQUM1QyxXQUFXLEVBQUU7Z0JBQ1gsd0NBQWtCO2dCQUNsQiw2Q0FBb0I7Z0JBQ3BCLDJDQUFtQjthQUNwQjtZQUNELFNBQVMsRUFBRTtnQkFDVCxFQUFFLE9BQU8sRUFBRSxrQ0FBZSxFQUFFLFFBQVEsRUFBRSxFQUFFLEVBQUU7Z0JBQzFDLEVBQUUsT0FBTyxFQUFFLHVDQUFpQixFQUFFLFFBQVEsRUFBRSxFQUFFLEVBQUU7Z0JBQzVDLEVBQUUsT0FBTyxFQUFFLHFDQUFnQixFQUFFLFFBQVEsRUFBRSxFQUFFLEVBQUU7Z0JBQzNDLEVBQUUsT0FBTyxFQUFFLHlDQUFrQixFQUFFLFFBQVEsRUFBRSxFQUFFLEVBQUU7YUFDOUM7U0FDRixDQUFDLENBQUMsT0FBTyxFQUFFLENBQUM7UUFFYixHQUFHLEdBQUcsTUFBTSxDQUFDLHFCQUFxQixFQUFFLENBQUM7UUFDckMsTUFBTSxHQUFHLENBQUMsSUFBSSxFQUFFLENBQUM7SUFDbkIsQ0FBQyxDQUFDLENBQUM7SUFFSCxTQUFTLENBQUMsS0FBSyxJQUFJLEVBQUU7UUFDbkIsTUFBTSxHQUFHLENBQUMsS0FBSyxFQUFFLENBQUM7SUFDcEIsQ0FBQyxDQUFDLENBQUM7SUFFSCxFQUFFLENBQUMsNEVBQTRFLEVBQUUsS0FBSyxJQUFJLEVBQUU7UUFDMUYsTUFBTSxPQUFPLENBQUMsR0FBRyxDQUFDLGFBQWEsRUFBRSxDQUFDLENBQUMsR0FBRyxDQUFDLFdBQVcsQ0FBQyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQztRQUNoRSxNQUFNLE9BQU8sQ0FBQyxHQUFHLENBQUMsYUFBYSxFQUFFLENBQUMsQ0FBQyxHQUFHLENBQUMsY0FBYyxDQUFDLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDO1FBQ25FLE1BQU0sT0FBTyxDQUFDLEdBQUcsQ0FBQyxhQUFhLEVBQUUsQ0FBQyxDQUFDLEdBQUcsQ0FBQyxhQUFhLENBQUMsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUM7SUFDcEUsQ0FBQyxDQUFDLENBQUM7QUFDTCxDQUFDLENBQUMsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyJEOlxcRGV2ZWxvcGVyXFxQcm9qZWN0c1xcS2FudGFUdWJlXFxLYW50YVR1YmVCYWNrZW5kXFxzcmNcXG1vZHVsZXNcXHNlbnNpdGl2ZS1yZWFkLWVuZHBvaW50cy5zcGVjLnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7IElOZXN0QXBwbGljYXRpb24gfSBmcm9tICdAbmVzdGpzL2NvbW1vbic7XG5pbXBvcnQgeyBUZXN0IH0gZnJvbSAnQG5lc3Rqcy90ZXN0aW5nJztcbmltcG9ydCAqIGFzIHJlcXVlc3QgZnJvbSAnc3VwZXJ0ZXN0JztcbmltcG9ydCB7IEJ1Z1JlcG9ydENvbnRyb2xsZXIgfSBmcm9tICcuL2J1Zy1yZXBvcnQvYnVnLXJlcG9ydC5jb250cm9sbGVyJztcbmltcG9ydCB7IEJ1Z1JlcG9ydFNlcnZpY2UgfSBmcm9tICcuL2J1Zy1yZXBvcnQvYnVnLXJlcG9ydC5zZXJ2aWNlJztcbmltcG9ydCB7IFZpc2l0b3JzQ29udHJvbGxlciB9IGZyb20gJy4vdmlzaXRvcnMvdmlzaXRvcnMuY29udHJvbGxlcic7XG5pbXBvcnQgeyBWaXNpdG9yc1NlcnZpY2UgfSBmcm9tICcuL3Zpc2l0b3JzL3Zpc2l0b3JzLnNlcnZpY2UnO1xuaW1wb3J0IHsgU2VhcmNoTG9nc0NvbnRyb2xsZXIgfSBmcm9tICcuL3NlYXJjaC1sb2dzL3NlYXJjaC1sb2dzLmNvbnRyb2xsZXInO1xuaW1wb3J0IHsgU2VhcmNoTG9nc1NlcnZpY2UgfSBmcm9tICcuL3NlYXJjaC1sb2dzL3NlYXJjaC1sb2dzLnNlcnZpY2UnO1xuaW1wb3J0IHsgUmF0ZUxpbWl0ZXJTZXJ2aWNlIH0gZnJvbSAnLi4vY29tbW9uL3JhdGUtbGltaXQvcmF0ZS1saW1pdGVyLnNlcnZpY2UnO1xuXG5kZXNjcmliZSgnc2Vuc2l0aXZlIGNvbGxlY3Rpb24gZW5kcG9pbnRzJywgKCkgPT4ge1xuICBsZXQgYXBwOiBJTmVzdEFwcGxpY2F0aW9uO1xuXG4gIGJlZm9yZUVhY2goYXN5bmMgKCkgPT4ge1xuICAgIGNvbnN0IG1vZHVsZSA9IGF3YWl0IFRlc3QuY3JlYXRlVGVzdGluZ01vZHVsZSh7XG4gICAgICBjb250cm9sbGVyczogW1xuICAgICAgICBWaXNpdG9yc0NvbnRyb2xsZXIsXG4gICAgICAgIFNlYXJjaExvZ3NDb250cm9sbGVyLFxuICAgICAgICBCdWdSZXBvcnRDb250cm9sbGVyLFxuICAgICAgXSxcbiAgICAgIHByb3ZpZGVyczogW1xuICAgICAgICB7IHByb3ZpZGU6IFZpc2l0b3JzU2VydmljZSwgdXNlVmFsdWU6IHt9IH0sXG4gICAgICAgIHsgcHJvdmlkZTogU2VhcmNoTG9nc1NlcnZpY2UsIHVzZVZhbHVlOiB7fSB9LFxuICAgICAgICB7IHByb3ZpZGU6IEJ1Z1JlcG9ydFNlcnZpY2UsIHVzZVZhbHVlOiB7fSB9LFxuICAgICAgICB7IHByb3ZpZGU6IFJhdGVMaW1pdGVyU2VydmljZSwgdXNlVmFsdWU6IHt9IH0sXG4gICAgICBdLFxuICAgIH0pLmNvbXBpbGUoKTtcblxuICAgIGFwcCA9IG1vZHVsZS5jcmVhdGVOZXN0QXBwbGljYXRpb24oKTtcbiAgICBhd2FpdCBhcHAuaW5pdCgpO1xuICB9KTtcblxuICBhZnRlckVhY2goYXN5bmMgKCkgPT4ge1xuICAgIGF3YWl0IGFwcC5jbG9zZSgpO1xuICB9KTtcblxuICBpdCgnZG9lcyBub3QgZXhwb3NlIHZpc2l0b3IsIHNlYXJjaC1sb2csIG9yIGJ1Zy1yZXBvcnQgY29sbGVjdGlvbnMgYW5vbnltb3VzbHknLCBhc3luYyAoKSA9PiB7XG4gICAgYXdhaXQgcmVxdWVzdChhcHAuZ2V0SHR0cFNlcnZlcigpKS5nZXQoJy92aXNpdG9ycycpLmV4cGVjdCg0MDQpO1xuICAgIGF3YWl0IHJlcXVlc3QoYXBwLmdldEh0dHBTZXJ2ZXIoKSkuZ2V0KCcvc2VhcmNoLWxvZ3MnKS5leHBlY3QoNDA0KTtcbiAgICBhd2FpdCByZXF1ZXN0KGFwcC5nZXRIdHRwU2VydmVyKCkpLmdldCgnL2J1Zy1yZXBvcnQnKS5leHBlY3QoNDA0KTtcbiAgfSk7XG59KTtcbiJdLCJ2ZXJzaW9uIjozfQ==
