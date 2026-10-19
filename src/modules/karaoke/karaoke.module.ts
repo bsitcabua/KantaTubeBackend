@@ -16,11 +16,13 @@ import { KaraokeSong } from './entities/karaoke-song.entity';
 import { KaraokeFavorite } from './entities/karaoke-favorite.entity';
 import { KaraokePlaylist } from './entities/karaoke-playlist.entity';
 import { KaraokePlaylistItem } from './entities/karaoke-playlist-item.entity';
+import { KaraokeScoreHistory } from './entities/karaoke-score-history.entity';
 import { KaraokeLibraryController } from './karaoke-library.controller';
 import { KaraokeLibraryService } from './karaoke-library.service';
 import { KaraokeLibraryCacheService } from './karaoke-library-cache.service';
 import { KaraokeLibraryEventsService } from './karaoke-library-events.service';
 import { KaraokeLibraryAuthGuard } from './guards/karaoke-library-auth.guard';
+import { KaraokeScoreHistoryService } from './karaoke-score-history.service';
 
 @Module({
   imports: [
@@ -36,6 +38,7 @@ import { KaraokeLibraryAuthGuard } from './guards/karaoke-library-auth.guard';
       KaraokeFavorite,
       KaraokePlaylist,
       KaraokePlaylistItem,
+      KaraokeScoreHistory,
     ]),
     AuthModule,
   ],
@@ -51,6 +54,7 @@ import { KaraokeLibraryAuthGuard } from './guards/karaoke-library-auth.guard';
     KaraokeLibraryCacheService,
     KaraokeLibraryEventsService,
     KaraokeLibraryAuthGuard,
+    KaraokeScoreHistoryService,
   ],
   exports: [
     KaraokeSessionService,

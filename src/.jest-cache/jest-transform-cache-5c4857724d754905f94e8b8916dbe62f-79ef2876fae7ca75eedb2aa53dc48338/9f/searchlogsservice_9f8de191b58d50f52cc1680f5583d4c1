@@ -1,0 +1,39 @@
+88f3eedd96fa9fbbed64376f1d7ca518
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SearchLogsService = void 0;
+const common_1 = require("@nestjs/common");
+const typeorm_1 = require("@nestjs/typeorm");
+const typeorm_2 = require("typeorm");
+const search_logs_entity_1 = require("./entities/search-logs.entity");
+let SearchLogsService = class SearchLogsService {
+    constructor(searchLogsRepo) {
+        this.searchLogsRepo = searchLogsRepo;
+    }
+    async findAll() {
+        return this.searchLogsRepo.find();
+    }
+    async create(search) {
+        const data = this.searchLogsRepo.create(search);
+        return this.searchLogsRepo.save(data);
+    }
+};
+exports.SearchLogsService = SearchLogsService;
+exports.SearchLogsService = SearchLogsService = __decorate([
+    (0, common_1.Injectable)(),
+    __param(0, (0, typeorm_1.InjectRepository)(search_logs_entity_1.SearchLogs)),
+    __metadata("design:paramtypes", [typeorm_2.Repository])
+], SearchLogsService);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxzZWFyY2gtbG9nc1xcc2VhcmNoLWxvZ3Muc2VydmljZS50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7Ozs7QUFBQSwyQ0FBNEM7QUFDNUMsNkNBQW1EO0FBQ25ELHFDQUFxQztBQUNyQyxzRUFBMkQ7QUFJcEQsSUFBTSxpQkFBaUIsR0FBdkIsTUFBTSxpQkFBaUI7SUFFMUIsWUFFWSxjQUFzQztRQUF0QyxtQkFBYyxHQUFkLGNBQWMsQ0FBd0I7SUFDL0MsQ0FBQztJQUVKLEtBQUssQ0FBQyxPQUFPO1FBQ1QsT0FBTyxJQUFJLENBQUMsY0FBYyxDQUFDLElBQUksRUFBRSxDQUFDO0lBQ3RDLENBQUM7SUFFRCxLQUFLLENBQUMsTUFBTSxDQUFDLE1BQTBCO1FBQ25DLE1BQU0sSUFBSSxHQUFHLElBQUksQ0FBQyxjQUFjLENBQUMsTUFBTSxDQUFDLE1BQU0sQ0FBQyxDQUFDO1FBQ2hELE9BQU8sSUFBSSxDQUFDLGNBQWMsQ0FBQyxJQUFJLENBQUMsSUFBSSxDQUFDLENBQUM7SUFDMUMsQ0FBQztDQUNKLENBQUE7QUFmWSw4Q0FBaUI7NEJBQWpCLGlCQUFpQjtJQUQ3QixJQUFBLG1CQUFVLEdBQUU7SUFJSixXQUFBLElBQUEsMEJBQWdCLEVBQUMsK0JBQVUsQ0FBQyxDQUFBO3FDQUNMLG9CQUFVO0dBSjdCLGlCQUFpQixDQWU3QiIsIm5hbWVzIjpbXSwic291cmNlcyI6WyJEOlxcRGV2ZWxvcGVyXFxQcm9qZWN0c1xcS2FudGFUdWJlXFxLYW50YVR1YmVCYWNrZW5kXFxzcmNcXG1vZHVsZXNcXHNlYXJjaC1sb2dzXFxzZWFyY2gtbG9ncy5zZXJ2aWNlLnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7IEluamVjdGFibGUgfSBmcm9tICdAbmVzdGpzL2NvbW1vbic7XHJcbmltcG9ydCB7IEluamVjdFJlcG9zaXRvcnkgfSBmcm9tICdAbmVzdGpzL3R5cGVvcm0nO1xyXG5pbXBvcnQgeyBSZXBvc2l0b3J5IH0gZnJvbSAndHlwZW9ybSc7XHJcbmltcG9ydCB7IFNlYXJjaExvZ3MgfSBmcm9tICcuL2VudGl0aWVzL3NlYXJjaC1sb2dzLmVudGl0eSc7XHJcbmltcG9ydCB7IFNlYXJjaExvZ0NyZWF0ZUR0byB9IGZyb20gJy4vc2VhcmNoLWxvZ3MuZHRvJztcclxuXHJcbkBJbmplY3RhYmxlKClcclxuZXhwb3J0IGNsYXNzIFNlYXJjaExvZ3NTZXJ2aWNlIHtcclxuXHJcbiAgICBjb25zdHJ1Y3RvcihcclxuICAgICAgICBASW5qZWN0UmVwb3NpdG9yeShTZWFyY2hMb2dzKVxyXG4gICAgICAgIHByaXZhdGUgc2VhcmNoTG9nc1JlcG86IFJlcG9zaXRvcnk8U2VhcmNoTG9ncz4sXHJcbiAgICApIHt9XHJcblxyXG4gICAgYXN5bmMgZmluZEFsbCgpOiBQcm9taXNlPFNlYXJjaExvZ3NbXT4ge1xyXG4gICAgICAgIHJldHVybiB0aGlzLnNlYXJjaExvZ3NSZXBvLmZpbmQoKTtcclxuICAgIH1cclxuICAgIFxyXG4gICAgYXN5bmMgY3JlYXRlKHNlYXJjaDogU2VhcmNoTG9nQ3JlYXRlRHRvKTogUHJvbWlzZTxTZWFyY2hMb2dzPiB7XHJcbiAgICAgICAgY29uc3QgZGF0YSA9IHRoaXMuc2VhcmNoTG9nc1JlcG8uY3JlYXRlKHNlYXJjaCk7XHJcbiAgICAgICAgcmV0dXJuIHRoaXMuc2VhcmNoTG9nc1JlcG8uc2F2ZShkYXRhKTtcclxuICAgIH1cclxufVxyXG4iXSwidmVyc2lvbiI6M30=

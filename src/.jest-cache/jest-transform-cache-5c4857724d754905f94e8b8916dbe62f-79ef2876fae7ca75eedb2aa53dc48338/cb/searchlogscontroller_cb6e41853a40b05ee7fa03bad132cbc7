@@ -1,0 +1,45 @@
+310ef12d42491b741ed1a3c3b3c6ccc8
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SearchLogsController = void 0;
+const common_1 = require("@nestjs/common");
+const search_logs_service_1 = require("./search-logs.service");
+const search_logs_dto_1 = require("./search-logs.dto");
+const rate_limiter_service_1 = require("../../common/rate-limit/rate-limiter.service");
+let SearchLogsController = class SearchLogsController {
+    constructor(searchLogsService, rateLimiter) {
+        this.searchLogsService = searchLogsService;
+        this.rateLimiter = rateLimiter;
+    }
+    create(search, request) {
+        this.rateLimiter.checkSearchLog(request.ip || 'unknown');
+        return this.searchLogsService.create((0, search_logs_dto_1.parseSearchLogCreateDto)(search));
+    }
+};
+exports.SearchLogsController = SearchLogsController;
+__decorate([
+    (0, common_1.Post)('create'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], SearchLogsController.prototype, "create", null);
+exports.SearchLogsController = SearchLogsController = __decorate([
+    (0, common_1.Controller)('search-logs'),
+    __metadata("design:paramtypes", [search_logs_service_1.SearchLogsService,
+        rate_limiter_service_1.RateLimiterService])
+], SearchLogsController);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxzZWFyY2gtbG9nc1xcc2VhcmNoLWxvZ3MuY29udHJvbGxlci50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7Ozs7QUFBQSwyQ0FBNkQ7QUFFN0QsK0RBQTBEO0FBQzFELHVEQUE0RDtBQUM1RCx1RkFBa0Y7QUFHM0UsSUFBTSxvQkFBb0IsR0FBMUIsTUFBTSxvQkFBb0I7SUFFN0IsWUFDcUIsaUJBQW9DLEVBQ3BDLFdBQStCO1FBRC9CLHNCQUFpQixHQUFqQixpQkFBaUIsQ0FBbUI7UUFDcEMsZ0JBQVcsR0FBWCxXQUFXLENBQW9CO0lBQ2pELENBQUM7SUFHSixNQUFNLENBQVMsTUFBZSxFQUFTLE9BQWdCO1FBQ25ELElBQUksQ0FBQyxXQUFXLENBQUMsY0FBYyxDQUFDLE9BQU8sQ0FBQyxFQUFFLElBQUksU0FBUyxDQUFDLENBQUM7UUFDekQsT0FBTyxJQUFJLENBQUMsaUJBQWlCLENBQUMsTUFBTSxDQUFDLElBQUEseUNBQXVCLEVBQUMsTUFBTSxDQUFDLENBQUMsQ0FBQztJQUMxRSxDQUFDO0NBQ0osQ0FBQTtBQVpZLG9EQUFvQjtBQVE3QjtJQURDLElBQUEsYUFBSSxFQUFDLFFBQVEsQ0FBQztJQUNQLFdBQUEsSUFBQSxhQUFJLEdBQUUsQ0FBQTtJQUFtQixXQUFBLElBQUEsWUFBRyxHQUFFLENBQUE7Ozs7a0RBR3JDOytCQVhRLG9CQUFvQjtJQURoQyxJQUFBLG1CQUFVLEVBQUMsYUFBYSxDQUFDO3FDQUlrQix1Q0FBaUI7UUFDdkIseUNBQWtCO0dBSjNDLG9CQUFvQixDQVloQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyJEOlxcRGV2ZWxvcGVyXFxQcm9qZWN0c1xcS2FudGFUdWJlXFxLYW50YVR1YmVCYWNrZW5kXFxzcmNcXG1vZHVsZXNcXHNlYXJjaC1sb2dzXFxzZWFyY2gtbG9ncy5jb250cm9sbGVyLnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7IEJvZHksIENvbnRyb2xsZXIsIFBvc3QsIFJlcSB9IGZyb20gJ0BuZXN0anMvY29tbW9uJztcclxuaW1wb3J0IHsgUmVxdWVzdCB9IGZyb20gJ2V4cHJlc3MnO1xyXG5pbXBvcnQgeyBTZWFyY2hMb2dzU2VydmljZSB9IGZyb20gJy4vc2VhcmNoLWxvZ3Muc2VydmljZSc7XHJcbmltcG9ydCB7IHBhcnNlU2VhcmNoTG9nQ3JlYXRlRHRvIH0gZnJvbSAnLi9zZWFyY2gtbG9ncy5kdG8nO1xyXG5pbXBvcnQgeyBSYXRlTGltaXRlclNlcnZpY2UgfSBmcm9tICcuLi8uLi9jb21tb24vcmF0ZS1saW1pdC9yYXRlLWxpbWl0ZXIuc2VydmljZSc7XHJcblxyXG5AQ29udHJvbGxlcignc2VhcmNoLWxvZ3MnKVxyXG5leHBvcnQgY2xhc3MgU2VhcmNoTG9nc0NvbnRyb2xsZXIge1xyXG5cclxuICAgIGNvbnN0cnVjdG9yKFxyXG4gICAgICAgIHByaXZhdGUgcmVhZG9ubHkgc2VhcmNoTG9nc1NlcnZpY2U6IFNlYXJjaExvZ3NTZXJ2aWNlLFxyXG4gICAgICAgIHByaXZhdGUgcmVhZG9ubHkgcmF0ZUxpbWl0ZXI6IFJhdGVMaW1pdGVyU2VydmljZSxcclxuICAgICkge31cclxuXHJcbiAgICBAUG9zdCgnY3JlYXRlJylcclxuICAgIGNyZWF0ZShAQm9keSgpIHNlYXJjaDogdW5rbm93biwgQFJlcSgpIHJlcXVlc3Q6IFJlcXVlc3QpIHtcclxuICAgICAgICB0aGlzLnJhdGVMaW1pdGVyLmNoZWNrU2VhcmNoTG9nKHJlcXVlc3QuaXAgfHwgJ3Vua25vd24nKTtcclxuICAgICAgICByZXR1cm4gdGhpcy5zZWFyY2hMb2dzU2VydmljZS5jcmVhdGUocGFyc2VTZWFyY2hMb2dDcmVhdGVEdG8oc2VhcmNoKSk7XHJcbiAgICB9XHJcbn1cclxuIl0sInZlcnNpb24iOjN9

@@ -159,6 +159,29 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     return sessions.map((session) => this.toResponse(session));
   }
 
+  async listHistory(ownerId: string, limit = 25): Promise<KaraokeSessionResponse[]> {
+    await this.expireStale(ownerId);
+    const sessions = await this.sessions.find({
+      where: {
+        ownerId,
+        status: In([KaraokeSessionStatus.ENDED, KaraokeSessionStatus.EXPIRED]),
+      },
+      order: { endedAt: 'DESC', createdAt: 'DESC' },
+      take: Math.min(Math.max(Math.floor(limit), 1), 100),
+    });
+    return sessions.map((session) => this.toResponse(session));
+  }
+
+  async getHistorySession(ownerId: string, id: string): Promise<KaraokeSessionResponse> {
+    await this.expireStale(ownerId);
+    const session = await this.sessions.findOne({ where: { id, ownerId } });
+    if (!session) throw new NotFoundException('Karaoke session not found.');
+    if (session.status === KaraokeSessionStatus.ACTIVE) {
+      throw new ConflictException('The active karaoke session is not in session history.');
+    }
+    return this.toResponse(session);
+  }
+
   /**
    * Upgrade an anonymous host into an account-owned session in place. The
    * guest host UUID becomes the karaoke session UUID, so queue identity and
@@ -276,7 +299,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       });
       const saved = await sessions.save(claimed);
       const savedQueue = queue.length
-        ? await queueRepository.save(queue.map((item, position) => queueRepository.create({ ...item, sessionId: saved.id, position })))
+        ? await queueRepository.save(queue.map((item, position) => queueRepository.create(this.toQueueEntity(item, saved.id, position))))
         : [];
       const savedPerformers = performers.length
         ? await performerRepository.save(performers.map((name, position) => performerRepository.create({ sessionId: saved.id, position, name })))
@@ -408,7 +431,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       if (items.length === 0) return [];
       const saved = await queue.save(
         items.map((item, position) =>
-          queue.create({ ...item, sessionId: id, position }),
+          queue.create(this.toQueueEntity(item, id, position)),
         ),
       );
       return saved
@@ -757,6 +780,9 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
         throw new BadRequestException(`Queue item ${index + 1} is invalid.`);
       }
       const item = value as Record<string, unknown>;
+      const queueItemId = item.queueItemId === undefined
+        ? undefined
+        : this.requiredUuid(item.queueItemId, `Queue item ${index + 1} queueItemId`);
       const videoId = this.requiredString(item.videoId, 20, 'videoId');
       if (!/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) {
         throw new BadRequestException(
@@ -774,6 +800,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
         );
       }
       return {
+        ...(queueItemId ? { queueItemId } : {}),
         videoId,
         title: this.requiredString(item.title, 200, 'title'),
         description:
@@ -844,11 +871,26 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
 
   private toQueueResponse(item: KaraokeQueueItem): KaraokeQueueItemResponse {
     return {
+      queueItemId: item.id,
       videoId: item.videoId,
       title: item.title,
       description: item.description,
       thumbnails: item.thumbnails,
       performer: item.performer,
+    };
+  }
+
+  private toQueueEntity(
+    item: KaraokeQueueItemResponse,
+    sessionId: string,
+    position: number,
+  ): Partial<KaraokeQueueItem> {
+    const { queueItemId, ...song } = item;
+    return {
+      ...(queueItemId ? { id: queueItemId } : {}),
+      ...song,
+      sessionId,
+      position,
     };
   }
 

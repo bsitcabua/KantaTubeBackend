@@ -335,6 +335,7 @@ describe('KaraokeSessionService', () => {
     expect(queueRepository.delete).toHaveBeenCalledWith({ sessionId });
     expect(result).toEqual([
       {
+        queueItemId: 'queue-0',
         videoId: 'dQw4w9WgXcQ',
         title: 'Test Karaoke',
         description: 'Description',

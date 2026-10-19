@@ -21,6 +21,7 @@ import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
 import { User } from '../users/entities/user.entity';
 import { KaraokeSessionService } from './karaoke-session.service';
 import { RemoteAuthorizationService } from './remote-authorization.service';
+import { KaraokeScoreHistoryService } from './karaoke-score-history.service';
 
 @Controller('karaoke-sessions')
 @UseGuards(SessionAuthGuard)
@@ -30,6 +31,7 @@ export class KaraokeSessionController {
   constructor(
     private readonly sessions: KaraokeSessionService,
     private readonly auth: AuthService,
+    private readonly scoreHistory: KaraokeScoreHistoryService,
     @Optional()
     private readonly remoteAuthorization?: RemoteAuthorizationService,
   ) {}
@@ -46,6 +48,11 @@ export class KaraokeSessionController {
   @Get('active')
   listActive(@CurrentUser() user: User) {
     return this.sessions.listActive(user.id);
+  }
+
+  @Get('history')
+  listHistory(@CurrentUser() user: User) {
+    return this.scoreHistory.listSessionHistory(user.id);
   }
 
   @Post('claim-guest')
@@ -126,6 +133,42 @@ export class KaraokeSessionController {
     @Query('clientId') clientId: string | undefined,
   ) {
     return this.sessions.getPerformers(user.id, sessionId, clientId);
+  }
+
+  @Post(':sessionId/performances')
+  @UseGuards(OriginGuard)
+  createPerformance(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.scoreHistory.create(user.id, sessionId, body);
+  }
+
+  @Get(':sessionId/performances')
+  listPerformances(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+    @Query('clientId') clientId: string | undefined,
+  ) {
+    return this.scoreHistory.list(user.id, sessionId, clientId);
+  }
+
+  @Get(':sessionId/leaderboard')
+  leaderboard(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+    @Query('clientId') clientId: string | undefined,
+  ) {
+    return this.scoreHistory.leaderboard(user.id, sessionId, clientId);
+  }
+
+  @Get(':sessionId/history')
+  historyDetail(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.scoreHistory.getSessionHistoryDetail(user.id, sessionId);
   }
 
   @Get(':sessionId')

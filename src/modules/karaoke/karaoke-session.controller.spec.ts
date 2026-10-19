@@ -5,6 +5,7 @@ import { SessionAuthGuard } from '../auth/guards/session-auth.guard';
 import { User } from '../users/entities/user.entity';
 import { KaraokeSessionController } from './karaoke-session.controller';
 import { KaraokeSessionService } from './karaoke-session.service';
+import { KaraokeScoreHistoryService } from './karaoke-score-history.service';
 
 describe('KaraokeSessionController', () => {
   const user = { id: '123e4567-e89b-42d3-a456-426614174000' } as User;
@@ -22,6 +23,11 @@ describe('KaraokeSessionController', () => {
       heartbeat: jest.fn(),
       end: jest.fn(),
     } as unknown as KaraokeSessionService;
+    const scoreHistory = {
+      create: jest.fn(),
+      list: jest.fn(),
+      leaderboard: jest.fn(),
+    } as unknown as KaraokeScoreHistoryService;
     const auth = {
       cookieName: 'kantatube_session',
       issueSocketTicket: jest.fn(),
@@ -30,9 +36,11 @@ describe('KaraokeSessionController', () => {
       controller: new KaraokeSessionController(
         service,
         auth,
+        scoreHistory,
         remoteAuthorization as never,
       ),
       service: service as jest.Mocked<KaraokeSessionService>,
+      scoreHistory: scoreHistory as jest.Mocked<KaraokeScoreHistoryService>,
       auth,
     };
   }
@@ -44,7 +52,7 @@ describe('KaraokeSessionController', () => {
   });
 
   it('requires origin checks for every mutation', () => {
-    for (const method of ['create', 'heartbeat', 'end'] as const) {
+    for (const method of ['create', 'heartbeat', 'end', 'createPerformance'] as const) {
       expect(
         Reflect.getMetadata(
           GUARDS_METADATA,
@@ -62,6 +70,9 @@ describe('KaraokeSessionController', () => {
     controller.get(user, sessionId, clientId);
     controller.heartbeat(user, sessionId, { clientId });
     controller.end(user, sessionId, { clientId });
+    controller.createPerformance(user, sessionId, { clientId, performanceInstanceId: '123e4567-e89b-42d3-a456-426614174003', score: 95, scoreMessage: 'Superstar!' });
+    controller.listPerformances(user, sessionId, clientId);
+    controller.leaderboard(user, sessionId, clientId);
 
     expect(service.create).toHaveBeenCalledWith(user.id, 'Living Room', clientId);
     expect(service.listActive).toHaveBeenCalledWith(user.id);
