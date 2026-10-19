@@ -104,6 +104,15 @@ export class AuthController {
     return this.auth.getCurrentUser(user.id);
   }
 
+  @Get('sessions')
+  @UseGuards(SessionAuthGuard)
+  listSessions(@CurrentUser() user: User, @Req() request: Request) {
+    return this.auth.listSessionSummaries(
+      user.id,
+      this.readCookie(request, this.auth.cookieName),
+    );
+  }
+
   @Get('socket-ticket')
   @UseGuards(SessionAuthGuard)
   socketTicket(@Req() request: Request) {

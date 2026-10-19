@@ -23,3 +23,11 @@ export interface CurrentUserResponse {
   postalCode?: string | null;
   country?: string | null;
 }
+
+export interface AuthSessionSummaryResponse {
+  deviceLabel: string;
+  browserLabel: string;
+  lastActiveAt: Date;
+  createdAt: Date;
+  isCurrent: boolean;
+}

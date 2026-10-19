@@ -1,4 +1,8 @@
 import { KaraokeSessionStatus } from './entities/karaoke-session.entity';
+import type {
+  KaraokeScoreHistoryResponse,
+  KaraokeScoreLeaderboardResponse,
+} from './karaoke-score-history.types';
 
 export interface KaraokeSessionResponse {
   id: string;
@@ -11,7 +15,20 @@ export interface KaraokeSessionResponse {
   updatedAt: Date;
 }
 
+export interface KaraokeSessionHistorySummaryResponse extends KaraokeSessionResponse {
+  totalPerformances: number;
+  topScore: number | null;
+  topPerformer: string | null;
+}
+
+export interface KaraokeSessionHistoryDetailResponse {
+  session: KaraokeSessionResponse;
+  performances: KaraokeScoreHistoryResponse[];
+  leaderboard: KaraokeScoreLeaderboardResponse;
+}
+
 export interface KaraokeQueueItemResponse {
+  queueItemId?: string;
   videoId: string;
   title: string;
   description: string;
