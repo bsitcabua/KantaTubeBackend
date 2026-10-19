@@ -1,0 +1,57 @@
+0324fb181f334b702a86c749f4742946
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.VisitorsController = void 0;
+const common_1 = require("@nestjs/common");
+const visitors_service_1 = require("./visitors.service");
+const visitors_dto_1 = require("./visitors.dto");
+const rate_limiter_service_1 = require("../../common/rate-limit/rate-limiter.service");
+let VisitorsController = class VisitorsController {
+    constructor(visitorsService, rateLimiter) {
+        this.visitorsService = visitorsService;
+        this.rateLimiter = rateLimiter;
+    }
+    async connecting() {
+        return {
+            success: true,
+            status: 200,
+        };
+    }
+    create(visitor, request) {
+        this.rateLimiter.checkVisitorCreation(request.ip || 'unknown');
+        return this.visitorsService.create((0, visitors_dto_1.parseVisitorCreateDto)(visitor));
+    }
+};
+exports.VisitorsController = VisitorsController;
+__decorate([
+    (0, common_1.Get)('connecting'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], VisitorsController.prototype, "connecting", null);
+__decorate([
+    (0, common_1.Post)('create'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], VisitorsController.prototype, "create", null);
+exports.VisitorsController = VisitorsController = __decorate([
+    (0, common_1.Controller)('visitors'),
+    __metadata("design:paramtypes", [visitors_service_1.VisitorsService,
+        rate_limiter_service_1.RateLimiterService])
+], VisitorsController);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFx2aXNpdG9yc1xcdmlzaXRvcnMuY29udHJvbGxlci50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7Ozs7QUFBQSwyQ0FBa0U7QUFFbEUseURBQXFEO0FBQ3JELGlEQUF1RDtBQUN2RCx1RkFBa0Y7QUFHM0UsSUFBTSxrQkFBa0IsR0FBeEIsTUFBTSxrQkFBa0I7SUFFN0IsWUFDbUIsZUFBZ0MsRUFDaEMsV0FBK0I7UUFEL0Isb0JBQWUsR0FBZixlQUFlLENBQWlCO1FBQ2hDLGdCQUFXLEdBQVgsV0FBVyxDQUFvQjtJQUMvQyxDQUFDO0lBR0UsQUFBTixLQUFLLENBQUMsVUFBVTtRQUNkLE9BQU87WUFDTCxPQUFPLEVBQUUsSUFBSTtZQUNiLE1BQU0sRUFBRSxHQUFHO1NBQ1osQ0FBQztJQUNKLENBQUM7SUFHRCxNQUFNLENBQVMsT0FBZ0IsRUFBUyxPQUFnQjtRQUN0RCxJQUFJLENBQUMsV0FBVyxDQUFDLG9CQUFvQixDQUFDLE9BQU8sQ0FBQyxFQUFFLElBQUksU0FBUyxDQUFDLENBQUM7UUFDL0QsT0FBTyxJQUFJLENBQUMsZUFBZSxDQUFDLE1BQU0sQ0FBQyxJQUFBLG9DQUFxQixFQUFDLE9BQU8sQ0FBQyxDQUFDLENBQUM7SUFDckUsQ0FBQztDQUNGLENBQUE7QUFwQlksZ0RBQWtCO0FBUXZCO0lBREwsSUFBQSxZQUFHLEVBQUMsWUFBWSxDQUFDOzs7O29EQU1qQjtBQUdEO0lBREMsSUFBQSxhQUFJLEVBQUMsUUFBUSxDQUFDO0lBQ1AsV0FBQSxJQUFBLGFBQUksR0FBRSxDQUFBO0lBQW9CLFdBQUEsSUFBQSxZQUFHLEdBQUUsQ0FBQTs7OztnREFHdEM7NkJBbkJVLGtCQUFrQjtJQUQ5QixJQUFBLG1CQUFVLEVBQUMsVUFBVSxDQUFDO3FDQUllLGtDQUFlO1FBQ25CLHlDQUFrQjtHQUp2QyxrQkFBa0IsQ0FvQjlCIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIkQ6XFxEZXZlbG9wZXJcXFByb2plY3RzXFxLYW50YVR1YmVcXEthbnRhVHViZUJhY2tlbmRcXHNyY1xcbW9kdWxlc1xcdmlzaXRvcnNcXHZpc2l0b3JzLmNvbnRyb2xsZXIudHMiXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHsgQm9keSwgQ29udHJvbGxlciwgR2V0LCBQb3N0LCBSZXEgfSBmcm9tICdAbmVzdGpzL2NvbW1vbic7XHJcbmltcG9ydCB7IFJlcXVlc3QgfSBmcm9tICdleHByZXNzJztcclxuaW1wb3J0IHsgVmlzaXRvcnNTZXJ2aWNlIH0gZnJvbSAnLi92aXNpdG9ycy5zZXJ2aWNlJztcclxuaW1wb3J0IHsgcGFyc2VWaXNpdG9yQ3JlYXRlRHRvIH0gZnJvbSAnLi92aXNpdG9ycy5kdG8nO1xyXG5pbXBvcnQgeyBSYXRlTGltaXRlclNlcnZpY2UgfSBmcm9tICcuLi8uLi9jb21tb24vcmF0ZS1saW1pdC9yYXRlLWxpbWl0ZXIuc2VydmljZSc7XHJcblxyXG5AQ29udHJvbGxlcigndmlzaXRvcnMnKVxyXG5leHBvcnQgY2xhc3MgVmlzaXRvcnNDb250cm9sbGVyIHtcclxuXHJcbiAgY29uc3RydWN0b3IoXHJcbiAgICBwcml2YXRlIHJlYWRvbmx5IHZpc2l0b3JzU2VydmljZTogVmlzaXRvcnNTZXJ2aWNlLFxyXG4gICAgcHJpdmF0ZSByZWFkb25seSByYXRlTGltaXRlcjogUmF0ZUxpbWl0ZXJTZXJ2aWNlLFxyXG4gICkge31cclxuXHJcbiAgQEdldCgnY29ubmVjdGluZycpXHJcbiAgYXN5bmMgY29ubmVjdGluZygpOiBQcm9taXNlPHsgc3VjY2VzczogYm9vbGVhbjsgc3RhdHVzOiBudW1iZXIgfT4ge1xyXG4gICAgcmV0dXJuIHtcclxuICAgICAgc3VjY2VzczogdHJ1ZSxcclxuICAgICAgc3RhdHVzOiAyMDAsXHJcbiAgICB9O1xyXG4gIH1cclxuXHJcbiAgQFBvc3QoJ2NyZWF0ZScpXHJcbiAgY3JlYXRlKEBCb2R5KCkgdmlzaXRvcjogdW5rbm93biwgQFJlcSgpIHJlcXVlc3Q6IFJlcXVlc3QpIHtcclxuICAgIHRoaXMucmF0ZUxpbWl0ZXIuY2hlY2tWaXNpdG9yQ3JlYXRpb24ocmVxdWVzdC5pcCB8fCAndW5rbm93bicpO1xyXG4gICAgcmV0dXJuIHRoaXMudmlzaXRvcnNTZXJ2aWNlLmNyZWF0ZShwYXJzZVZpc2l0b3JDcmVhdGVEdG8odmlzaXRvcikpO1xyXG4gIH1cclxufVxyXG4iXSwidmVyc2lvbiI6M30=

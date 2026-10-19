@@ -1,0 +1,20 @@
+13a02086efc00c62677b0a7da3b0522e
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.YoutubeRateLimiterService = void 0;
+const common_1 = require("@nestjs/common");
+const rate_limiter_service_1 = require("../../common/rate-limit/rate-limiter.service");
+/** Compatibility name for existing tests/imports. */
+let YoutubeRateLimiterService = class YoutubeRateLimiterService extends rate_limiter_service_1.RateLimiterService {
+};
+exports.YoutubeRateLimiterService = YoutubeRateLimiterService;
+exports.YoutubeRateLimiterService = YoutubeRateLimiterService = __decorate([
+    (0, common_1.Injectable)()
+], YoutubeRateLimiterService);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFx5b3V0dWJlXFx5b3V0dWJlLXJhdGUtbGltaXRlci5zZXJ2aWNlLnRzIiwibWFwcGluZ3MiOiI7Ozs7Ozs7OztBQUFBLDJDQUE0QztBQUM1Qyx1RkFBa0Y7QUFFbEYscURBQXFEO0FBRTlDLElBQU0seUJBQXlCLEdBQS9CLE1BQU0seUJBQTBCLFNBQVEseUNBQWtCO0NBQUcsQ0FBQTtBQUF2RCw4REFBeUI7b0NBQXpCLHlCQUF5QjtJQURyQyxJQUFBLG1CQUFVLEdBQUU7R0FDQSx5QkFBeUIsQ0FBOEIiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFx5b3V0dWJlXFx5b3V0dWJlLXJhdGUtbGltaXRlci5zZXJ2aWNlLnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7IEluamVjdGFibGUgfSBmcm9tICdAbmVzdGpzL2NvbW1vbic7XG5pbXBvcnQgeyBSYXRlTGltaXRlclNlcnZpY2UgfSBmcm9tICcuLi8uLi9jb21tb24vcmF0ZS1saW1pdC9yYXRlLWxpbWl0ZXIuc2VydmljZSc7XG5cbi8qKiBDb21wYXRpYmlsaXR5IG5hbWUgZm9yIGV4aXN0aW5nIHRlc3RzL2ltcG9ydHMuICovXG5ASW5qZWN0YWJsZSgpXG5leHBvcnQgY2xhc3MgWW91dHViZVJhdGVMaW1pdGVyU2VydmljZSBleHRlbmRzIFJhdGVMaW1pdGVyU2VydmljZSB7fVxuIl0sInZlcnNpb24iOjN9

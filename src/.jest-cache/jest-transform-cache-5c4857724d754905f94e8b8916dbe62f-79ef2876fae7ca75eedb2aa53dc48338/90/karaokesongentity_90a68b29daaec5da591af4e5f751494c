@@ -1,0 +1,84 @@
+cefed424c2ea64bcbcf45fde514f54f2
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KaraokeSong = void 0;
+const typeorm_1 = require("typeorm");
+let KaraokeSong = class KaraokeSong {
+};
+exports.KaraokeSong = KaraokeSong;
+__decorate([
+    (0, typeorm_1.PrimaryGeneratedColumn)({ type: 'int', unsigned: true }),
+    __metadata("design:type", Number)
+], KaraokeSong.prototype, "id", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', length: 255 }),
+    __metadata("design:type", String)
+], KaraokeSong.prototype, "title", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', length: 255 }),
+    __metadata("design:type", String)
+], KaraokeSong.prototype, "artist", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', length: 60 }),
+    __metadata("design:type", String)
+], KaraokeSong.prototype, "language", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', length: 60 }),
+    __metadata("design:type", String)
+], KaraokeSong.prototype, "category", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        name: 'youtube_video_id',
+        type: 'varchar',
+        length: 11,
+        nullable: true,
+        charset: 'ascii',
+        collation: 'ascii_bin',
+    }),
+    __metadata("design:type", String)
+], KaraokeSong.prototype, "youtubeVideoId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        type: 'varchar',
+        length: 100,
+        default: 'uploaded_catalog',
+    }),
+    __metadata("design:type", String)
+], KaraokeSong.prototype, "source", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'is_verified_karaoke', type: 'boolean', default: false }),
+    __metadata("design:type", Boolean)
+], KaraokeSong.prototype, "isVerifiedKaraoke", void 0);
+__decorate([
+    (0, typeorm_1.CreateDateColumn)({
+        name: 'created_at',
+        type: 'timestamp',
+        default: () => 'CURRENT_TIMESTAMP',
+    }),
+    __metadata("design:type", Date)
+], KaraokeSong.prototype, "createdAt", void 0);
+__decorate([
+    (0, typeorm_1.UpdateDateColumn)({
+        name: 'updated_at',
+        type: 'timestamp',
+        default: () => 'CURRENT_TIMESTAMP',
+        onUpdate: 'CURRENT_TIMESTAMP',
+    }),
+    __metadata("design:type", Date)
+], KaraokeSong.prototype, "updatedAt", void 0);
+exports.KaraokeSong = KaraokeSong = __decorate([
+    (0, typeorm_1.Entity)('karaoke_songs'),
+    (0, typeorm_1.Index)('uq_youtube_video_id', ['youtubeVideoId'], { unique: true }),
+    (0, typeorm_1.Index)('idx_category_language', ['category', 'language']),
+    (0, typeorm_1.Index)('idx_artist', ['artist'])
+], KaraokeSong);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxrYXJhb2tlXFxlbnRpdGllc1xca2FyYW9rZS1zb25nLmVudGl0eS50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7QUFBQSxxQ0FPaUI7QUFNVixJQUFNLFdBQVcsR0FBakIsTUFBTSxXQUFXO0NBa0R2QixDQUFBO0FBbERZLGtDQUFXO0FBRXRCO0lBREMsSUFBQSxnQ0FBc0IsRUFBQyxFQUFFLElBQUksRUFBRSxLQUFLLEVBQUUsUUFBUSxFQUFFLElBQUksRUFBRSxDQUFDOzt1Q0FDN0M7QUFHWDtJQURDLElBQUEsZ0JBQU0sRUFBQyxFQUFFLElBQUksRUFBRSxTQUFTLEVBQUUsTUFBTSxFQUFFLEdBQUcsRUFBRSxDQUFDOzswQ0FDM0I7QUFHZDtJQURDLElBQUEsZ0JBQU0sRUFBQyxFQUFFLElBQUksRUFBRSxTQUFTLEVBQUUsTUFBTSxFQUFFLEdBQUcsRUFBRSxDQUFDOzsyQ0FDMUI7QUFHZjtJQURDLElBQUEsZ0JBQU0sRUFBQyxFQUFFLElBQUksRUFBRSxTQUFTLEVBQUUsTUFBTSxFQUFFLEVBQUUsRUFBRSxDQUFDOzs2Q0FDdkI7QUFHakI7SUFEQyxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsU0FBUyxFQUFFLE1BQU0sRUFBRSxFQUFFLEVBQUUsQ0FBQzs7NkNBQ3ZCO0FBVWpCO0lBUkMsSUFBQSxnQkFBTSxFQUFDO1FBQ04sSUFBSSxFQUFFLGtCQUFrQjtRQUN4QixJQUFJLEVBQUUsU0FBUztRQUNmLE1BQU0sRUFBRSxFQUFFO1FBQ1YsUUFBUSxFQUFFLElBQUk7UUFDZCxPQUFPLEVBQUUsT0FBTztRQUNoQixTQUFTLEVBQUUsV0FBVztLQUN2QixDQUFDOzttREFDNEI7QUFPOUI7SUFMQyxJQUFBLGdCQUFNLEVBQUM7UUFDTixJQUFJLEVBQUUsU0FBUztRQUNmLE1BQU0sRUFBRSxHQUFHO1FBQ1gsT0FBTyxFQUFFLGtCQUFrQjtLQUM1QixDQUFDOzsyQ0FDYTtBQUdmO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLHFCQUFxQixFQUFFLElBQUksRUFBRSxTQUFTLEVBQUUsT0FBTyxFQUFFLEtBQUssRUFBRSxDQUFDOztzREFDOUM7QUFPM0I7SUFMQyxJQUFBLDBCQUFnQixFQUFDO1FBQ2hCLElBQUksRUFBRSxZQUFZO1FBQ2xCLElBQUksRUFBRSxXQUFXO1FBQ2pCLE9BQU8sRUFBRSxHQUFHLEVBQUUsQ0FBQyxtQkFBbUI7S0FDbkMsQ0FBQzs4QkFDUyxJQUFJOzhDQUFDO0FBUWhCO0lBTkMsSUFBQSwwQkFBZ0IsRUFBQztRQUNoQixJQUFJLEVBQUUsWUFBWTtRQUNsQixJQUFJLEVBQUUsV0FBVztRQUNqQixPQUFPLEVBQUUsR0FBRyxFQUFFLENBQUMsbUJBQW1CO1FBQ2xDLFFBQVEsRUFBRSxtQkFBbUI7S0FDOUIsQ0FBQzs4QkFDUyxJQUFJOzhDQUFDO3NCQWpETCxXQUFXO0lBSnZCLElBQUEsZ0JBQU0sRUFBQyxlQUFlLENBQUM7SUFDdkIsSUFBQSxlQUFLLEVBQUMscUJBQXFCLEVBQUUsQ0FBQyxnQkFBZ0IsQ0FBQyxFQUFFLEVBQUUsTUFBTSxFQUFFLElBQUksRUFBRSxDQUFDO0lBQ2xFLElBQUEsZUFBSyxFQUFDLHVCQUF1QixFQUFFLENBQUMsVUFBVSxFQUFFLFVBQVUsQ0FBQyxDQUFDO0lBQ3hELElBQUEsZUFBSyxFQUFDLFlBQVksRUFBRSxDQUFDLFFBQVEsQ0FBQyxDQUFDO0dBQ25CLFdBQVcsQ0FrRHZCIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIkQ6XFxEZXZlbG9wZXJcXFByb2plY3RzXFxLYW50YVR1YmVcXEthbnRhVHViZUJhY2tlbmRcXHNyY1xcbW9kdWxlc1xca2FyYW9rZVxcZW50aXRpZXNcXGthcmFva2Utc29uZy5lbnRpdHkudHMiXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHtcbiAgQ29sdW1uLFxuICBDcmVhdGVEYXRlQ29sdW1uLFxuICBFbnRpdHksXG4gIEluZGV4LFxuICBQcmltYXJ5R2VuZXJhdGVkQ29sdW1uLFxuICBVcGRhdGVEYXRlQ29sdW1uLFxufSBmcm9tICd0eXBlb3JtJztcblxuQEVudGl0eSgna2FyYW9rZV9zb25ncycpXG5ASW5kZXgoJ3VxX3lvdXR1YmVfdmlkZW9faWQnLCBbJ3lvdXR1YmVWaWRlb0lkJ10sIHsgdW5pcXVlOiB0cnVlIH0pXG5ASW5kZXgoJ2lkeF9jYXRlZ29yeV9sYW5ndWFnZScsIFsnY2F0ZWdvcnknLCAnbGFuZ3VhZ2UnXSlcbkBJbmRleCgnaWR4X2FydGlzdCcsIFsnYXJ0aXN0J10pXG5leHBvcnQgY2xhc3MgS2FyYW9rZVNvbmcge1xuICBAUHJpbWFyeUdlbmVyYXRlZENvbHVtbih7IHR5cGU6ICdpbnQnLCB1bnNpZ25lZDogdHJ1ZSB9KVxuICBpZDogbnVtYmVyO1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAndmFyY2hhcicsIGxlbmd0aDogMjU1IH0pXG4gIHRpdGxlOiBzdHJpbmc7XG5cbiAgQENvbHVtbih7IHR5cGU6ICd2YXJjaGFyJywgbGVuZ3RoOiAyNTUgfSlcbiAgYXJ0aXN0OiBzdHJpbmc7XG5cbiAgQENvbHVtbih7IHR5cGU6ICd2YXJjaGFyJywgbGVuZ3RoOiA2MCB9KVxuICBsYW5ndWFnZTogc3RyaW5nO1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAndmFyY2hhcicsIGxlbmd0aDogNjAgfSlcbiAgY2F0ZWdvcnk6IHN0cmluZztcblxuICBAQ29sdW1uKHtcbiAgICBuYW1lOiAneW91dHViZV92aWRlb19pZCcsXG4gICAgdHlwZTogJ3ZhcmNoYXInLFxuICAgIGxlbmd0aDogMTEsXG4gICAgbnVsbGFibGU6IHRydWUsXG4gICAgY2hhcnNldDogJ2FzY2lpJyxcbiAgICBjb2xsYXRpb246ICdhc2NpaV9iaW4nLFxuICB9KVxuICB5b3V0dWJlVmlkZW9JZDogc3RyaW5nIHwgbnVsbDtcblxuICBAQ29sdW1uKHtcbiAgICB0eXBlOiAndmFyY2hhcicsXG4gICAgbGVuZ3RoOiAxMDAsXG4gICAgZGVmYXVsdDogJ3VwbG9hZGVkX2NhdGFsb2cnLFxuICB9KVxuICBzb3VyY2U6IHN0cmluZztcblxuICBAQ29sdW1uKHsgbmFtZTogJ2lzX3ZlcmlmaWVkX2thcmFva2UnLCB0eXBlOiAnYm9vbGVhbicsIGRlZmF1bHQ6IGZhbHNlIH0pXG4gIGlzVmVyaWZpZWRLYXJhb2tlOiBib29sZWFuO1xuXG4gIEBDcmVhdGVEYXRlQ29sdW1uKHtcbiAgICBuYW1lOiAnY3JlYXRlZF9hdCcsXG4gICAgdHlwZTogJ3RpbWVzdGFtcCcsXG4gICAgZGVmYXVsdDogKCkgPT4gJ0NVUlJFTlRfVElNRVNUQU1QJyxcbiAgfSlcbiAgY3JlYXRlZEF0OiBEYXRlO1xuXG4gIEBVcGRhdGVEYXRlQ29sdW1uKHtcbiAgICBuYW1lOiAndXBkYXRlZF9hdCcsXG4gICAgdHlwZTogJ3RpbWVzdGFtcCcsXG4gICAgZGVmYXVsdDogKCkgPT4gJ0NVUlJFTlRfVElNRVNUQU1QJyxcbiAgICBvblVwZGF0ZTogJ0NVUlJFTlRfVElNRVNUQU1QJyxcbiAgfSlcbiAgdXBkYXRlZEF0OiBEYXRlO1xufVxuIl0sInZlcnNpb24iOjN9

@@ -12,7 +12,7 @@ import { randomInt, scrypt as scryptCallback, timingSafeEqual } from 'crypto';
 import { IsNull, LessThan, MoreThan, Repository } from 'typeorm';
 import { promisify } from 'util';
 import { User, UserStatus } from '../users/entities/user.entity';
-import { CurrentUserResponse, ProviderProfile } from './auth.types';
+import { AuthSessionSummaryResponse, CurrentUserResponse, ProviderProfile } from './auth.types';
 import { AuthAccount, AuthProvider } from './entities/auth-account.entity';
 import { AuthSession } from './entities/auth-session.entity';
 import { OAuthLoginAttempt } from './entities/oauth-login-attempt.entity';
@@ -861,6 +861,22 @@ export class AuthService {
     await this.revokeUserSessions(this.sessions, userId, new Date());
   }
 
+  async listSessionSummaries(userId: string, rawToken?: string): Promise<AuthSessionSummaryResponse[]> {
+    await this.sessions.delete({ expiresAt: LessThan(new Date()) });
+    const currentTokenHash = rawToken ? this.hash(rawToken) : null;
+    const sessions = await this.sessions.find({
+      where: { userId, revokedAt: IsNull(), expiresAt: MoreThan(new Date()) },
+      order: { lastUsedAt: 'DESC', createdAt: 'DESC' },
+    });
+    return sessions.map((session) => ({
+      deviceLabel: this.deviceLabel(session.userAgent),
+      browserLabel: this.browserLabel(session.userAgent),
+      lastActiveAt: session.lastUsedAt,
+      createdAt: session.createdAt,
+      isCurrent: !!currentTokenHash && session.tokenHash === currentTokenHash,
+    }));
+  }
+
   private async revokeUserSessions(
     repository: Pick<Repository<AuthSession>, 'update'>,
     userId: string,
@@ -870,6 +886,27 @@ export class AuthService {
       { userId, revokedAt: IsNull() },
       { revokedAt },
     );
+  }
+
+  private deviceLabel(userAgent: string | null): string {
+    const value = userAgent?.toLowerCase() || '';
+    if (value.includes('ipad') || value.includes('tablet')) return 'Tablet';
+    if (value.includes('mobile') || value.includes('android')) return 'Mobile device';
+    if (value.includes('windows')) return 'Windows';
+    if (value.includes('mac os') || value.includes('macintosh')) return 'Mac';
+    if (value.includes('linux')) return 'Linux';
+    if (value.includes('iphone')) return 'iPhone';
+    return 'Desktop device';
+  }
+
+  private browserLabel(userAgent: string | null): string {
+    const value = userAgent?.toLowerCase() || '';
+    if (value.includes('edg/')) return 'Microsoft Edge';
+    if (value.includes('chrome/') && !value.includes('chromium')) return 'Chrome';
+    if (value.includes('firefox/')) return 'Firefox';
+    if (value.includes('safari/') && !value.includes('chrome/')) return 'Safari';
+    if (value.includes('opera/') || value.includes('opr/')) return 'Opera';
+    return 'Browser';
   }
 
   get cookieName(): string {

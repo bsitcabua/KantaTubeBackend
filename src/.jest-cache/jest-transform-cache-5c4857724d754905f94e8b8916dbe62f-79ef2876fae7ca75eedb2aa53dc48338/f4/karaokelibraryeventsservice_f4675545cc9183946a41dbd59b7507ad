@@ -1,0 +1,33 @@
+b1c681728faf41c73df570d1a39c677c
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KaraokeLibraryEventsService = void 0;
+const common_1 = require("@nestjs/common");
+let KaraokeLibraryEventsService = class KaraokeLibraryEventsService {
+    constructor() {
+        this.listeners = new Set();
+    }
+    subscribe(listener) {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
+    }
+    publish(change) {
+        const event = {
+            ...change,
+            version: change.version ?? new Date().toISOString(),
+        };
+        for (const listener of this.listeners)
+            listener(event);
+    }
+};
+exports.KaraokeLibraryEventsService = KaraokeLibraryEventsService;
+exports.KaraokeLibraryEventsService = KaraokeLibraryEventsService = __decorate([
+    (0, common_1.Injectable)()
+], KaraokeLibraryEventsService);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxrYXJhb2tlXFxrYXJhb2tlLWxpYnJhcnktZXZlbnRzLnNlcnZpY2UudHMiLCJtYXBwaW5ncyI6Ijs7Ozs7Ozs7O0FBQUEsMkNBQTRDO0FBMEJyQyxJQUFNLDJCQUEyQixHQUFqQyxNQUFNLDJCQUEyQjtJQUFqQztRQUNZLGNBQVMsR0FBRyxJQUFJLEdBQUcsRUFBWSxDQUFDO0lBY25ELENBQUM7SUFaQyxTQUFTLENBQUMsUUFBa0I7UUFDMUIsSUFBSSxDQUFDLFNBQVMsQ0FBQyxHQUFHLENBQUMsUUFBUSxDQUFDLENBQUM7UUFDN0IsT0FBTyxHQUFHLEVBQUUsQ0FBQyxJQUFJLENBQUMsU0FBUyxDQUFDLE1BQU0sQ0FBQyxRQUFRLENBQUMsQ0FBQztJQUMvQyxDQUFDO0lBRUQsT0FBTyxDQUFDLE1BQW9FO1FBQzFFLE1BQU0sS0FBSyxHQUF5QjtZQUNsQyxHQUFHLE1BQU07WUFDVCxPQUFPLEVBQUUsTUFBTSxDQUFDLE9BQU8sSUFBSSxJQUFJLElBQUksRUFBRSxDQUFDLFdBQVcsRUFBRTtTQUNwRCxDQUFDO1FBQ0YsS0FBSyxNQUFNLFFBQVEsSUFBSSxJQUFJLENBQUMsU0FBUztZQUFFLFFBQVEsQ0FBQyxLQUFLLENBQUMsQ0FBQztJQUN6RCxDQUFDO0NBQ0YsQ0FBQTtBQWZZLGtFQUEyQjtzQ0FBM0IsMkJBQTJCO0lBRHZDLElBQUEsbUJBQVUsR0FBRTtHQUNBLDJCQUEyQixDQWV2QyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyJEOlxcRGV2ZWxvcGVyXFxQcm9qZWN0c1xcS2FudGFUdWJlXFxLYW50YVR1YmVCYWNrZW5kXFxzcmNcXG1vZHVsZXNcXGthcmFva2VcXGthcmFva2UtbGlicmFyeS1ldmVudHMuc2VydmljZS50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyBJbmplY3RhYmxlIH0gZnJvbSAnQG5lc3Rqcy9jb21tb24nO1xuXG5leHBvcnQgdHlwZSBLYXJhb2tlTGlicmFyeVJlc291cmNlID0gJ2Zhdm9yaXRlcycgfCAncGxheWxpc3RzJztcbmV4cG9ydCB0eXBlIEthcmFva2VMaWJyYXJ5Q2hhbmdlVHlwZSA9XG4gIHwgJ2Zhdm9yaXRlLWNyZWF0ZWQnXG4gIHwgJ2Zhdm9yaXRlLXJlbW92ZWQnXG4gIHwgJ2Zhdm9yaXRlLXZpc2liaWxpdHktY2hhbmdlZCdcbiAgfCAncGxheWxpc3QtY3JlYXRlZCdcbiAgfCAncGxheWxpc3QtcmVuYW1lZCdcbiAgfCAncGxheWxpc3QtZGVsZXRlZCdcbiAgfCAncGxheWxpc3QtdmlzaWJpbGl0eS1jaGFuZ2VkJ1xuICB8ICdwbGF5bGlzdC1zb25nLWFkZGVkJ1xuICB8ICdwbGF5bGlzdC1zb25nLXJlbW92ZWQnXG4gIHwgJ3BsYXlsaXN0LXJlb3JkZXJlZCc7XG5cbmV4cG9ydCBpbnRlcmZhY2UgS2FyYW9rZUxpYnJhcnlDaGFuZ2Uge1xuICB1c2VySWQ6IHN0cmluZztcbiAgcmVzb3VyY2U6IEthcmFva2VMaWJyYXJ5UmVzb3VyY2U7XG4gIHR5cGU6IEthcmFva2VMaWJyYXJ5Q2hhbmdlVHlwZTtcbiAgcmVzb3VyY2VJZD86IHN0cmluZztcbiAgdmVyc2lvbjogc3RyaW5nO1xufVxuXG50eXBlIExpc3RlbmVyID0gKGNoYW5nZTogS2FyYW9rZUxpYnJhcnlDaGFuZ2UpID0+IHZvaWQ7XG5cbkBJbmplY3RhYmxlKClcbmV4cG9ydCBjbGFzcyBLYXJhb2tlTGlicmFyeUV2ZW50c1NlcnZpY2Uge1xuICBwcml2YXRlIHJlYWRvbmx5IGxpc3RlbmVycyA9IG5ldyBTZXQ8TGlzdGVuZXI+KCk7XG5cbiAgc3Vic2NyaWJlKGxpc3RlbmVyOiBMaXN0ZW5lcik6ICgpID0+IHZvaWQge1xuICAgIHRoaXMubGlzdGVuZXJzLmFkZChsaXN0ZW5lcik7XG4gICAgcmV0dXJuICgpID0+IHRoaXMubGlzdGVuZXJzLmRlbGV0ZShsaXN0ZW5lcik7XG4gIH1cblxuICBwdWJsaXNoKGNoYW5nZTogT21pdDxLYXJhb2tlTGlicmFyeUNoYW5nZSwgJ3ZlcnNpb24nPiAmIHsgdmVyc2lvbj86IHN0cmluZyB9KTogdm9pZCB7XG4gICAgY29uc3QgZXZlbnQ6IEthcmFva2VMaWJyYXJ5Q2hhbmdlID0ge1xuICAgICAgLi4uY2hhbmdlLFxuICAgICAgdmVyc2lvbjogY2hhbmdlLnZlcnNpb24gPz8gbmV3IERhdGUoKS50b0lTT1N0cmluZygpLFxuICAgIH07XG4gICAgZm9yIChjb25zdCBsaXN0ZW5lciBvZiB0aGlzLmxpc3RlbmVycykgbGlzdGVuZXIoZXZlbnQpO1xuICB9XG59XG4iXSwidmVyc2lvbiI6M30=

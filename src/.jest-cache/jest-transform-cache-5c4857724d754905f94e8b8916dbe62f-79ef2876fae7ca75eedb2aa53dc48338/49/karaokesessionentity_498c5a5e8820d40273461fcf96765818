@@ -1,0 +1,95 @@
+0ae6a9c83a32c5a4952b125b0617e0be
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.KaraokeSession = exports.KaraokeSessionStatus = void 0;
+const typeorm_1 = require("typeorm");
+const user_entity_1 = require("../../users/entities/user.entity");
+const karaoke_queue_item_entity_1 = require("./karaoke-queue-item.entity");
+const karaoke_session_performer_entity_1 = require("./karaoke-session-performer.entity");
+var KaraokeSessionStatus;
+(function (KaraokeSessionStatus) {
+    KaraokeSessionStatus["ACTIVE"] = "active";
+    KaraokeSessionStatus["ENDED"] = "ended";
+    KaraokeSessionStatus["EXPIRED"] = "expired";
+})(KaraokeSessionStatus || (exports.KaraokeSessionStatus = KaraokeSessionStatus = {}));
+let KaraokeSession = class KaraokeSession {
+};
+exports.KaraokeSession = KaraokeSession;
+__decorate([
+    (0, typeorm_1.PrimaryGeneratedColumn)('uuid'),
+    __metadata("design:type", String)
+], KaraokeSession.prototype, "id", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'char', length: 36 }),
+    __metadata("design:type", String)
+], KaraokeSession.prototype, "ownerId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'varchar', length: 20 }),
+    __metadata("design:type", String)
+], KaraokeSession.prototype, "alias", void 0);
+__decorate([
+    (0, typeorm_1.Column)({
+        type: 'enum',
+        enum: KaraokeSessionStatus,
+        default: KaraokeSessionStatus.ACTIVE,
+    }),
+    __metadata("design:type", String)
+], KaraokeSession.prototype, "status", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'datetime' }),
+    __metadata("design:type", Date)
+], KaraokeSession.prototype, "lastHeartbeatAt", void 0);
+__decorate([
+    (0, typeorm_1.Index)('idx_karaoke_sessions_lease_expires_at'),
+    (0, typeorm_1.Column)({ type: 'datetime' }),
+    __metadata("design:type", Date)
+], KaraokeSession.prototype, "leaseExpiresAt", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'char', length: 36, nullable: true }),
+    __metadata("design:type", String)
+], KaraokeSession.prototype, "clientId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'datetime', nullable: true }),
+    __metadata("design:type", Date)
+], KaraokeSession.prototype, "endedAt", void 0);
+__decorate([
+    (0, typeorm_1.CreateDateColumn)({ type: 'datetime' }),
+    __metadata("design:type", Date)
+], KaraokeSession.prototype, "createdAt", void 0);
+__decorate([
+    (0, typeorm_1.UpdateDateColumn)({ type: 'datetime' }),
+    __metadata("design:type", Date)
+], KaraokeSession.prototype, "updatedAt", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => user_entity_1.User, (user) => user.karaokeSessions, {
+        onDelete: 'CASCADE',
+    }),
+    (0, typeorm_1.JoinColumn)({ name: 'ownerId' }),
+    __metadata("design:type", user_entity_1.User)
+], KaraokeSession.prototype, "owner", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => karaoke_queue_item_entity_1.KaraokeQueueItem, (item) => item.session),
+    __metadata("design:type", Array)
+], KaraokeSession.prototype, "queueItems", void 0);
+__decorate([
+    (0, typeorm_1.OneToMany)(() => karaoke_session_performer_entity_1.KaraokeSessionPerformer, (performer) => performer.session),
+    __metadata("design:type", Array)
+], KaraokeSession.prototype, "performers", void 0);
+exports.KaraokeSession = KaraokeSession = __decorate([
+    (0, typeorm_1.Entity)('karaoke_sessions'),
+    (0, typeorm_1.Index)('idx_karaoke_sessions_owner_status_lease', [
+        'ownerId',
+        'status',
+        'leaseExpiresAt',
+    ])
+], KaraokeSession);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxrYXJhb2tlXFxlbnRpdGllc1xca2FyYW9rZS1zZXNzaW9uLmVudGl0eS50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7QUFBQSxxQ0FVaUI7QUFDakIsa0VBQXdEO0FBQ3hELDJFQUErRDtBQUMvRCx5RkFBNkU7QUFFN0UsSUFBWSxvQkFJWDtBQUpELFdBQVksb0JBQW9CO0lBQzlCLHlDQUFpQixDQUFBO0lBQ2pCLHVDQUFlLENBQUE7SUFDZiwyQ0FBbUIsQ0FBQTtBQUNyQixDQUFDLEVBSlcsb0JBQW9CLG9DQUFwQixvQkFBb0IsUUFJL0I7QUFRTSxJQUFNLGNBQWMsR0FBcEIsTUFBTSxjQUFjO0NBK0MxQixDQUFBO0FBL0NZLHdDQUFjO0FBRXpCO0lBREMsSUFBQSxnQ0FBc0IsRUFBQyxNQUFNLENBQUM7OzBDQUNwQjtBQUdYO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxNQUFNLEVBQUUsRUFBRSxFQUFFLENBQUM7OytDQUNyQjtBQUdoQjtJQURDLElBQUEsZ0JBQU0sRUFBQyxFQUFFLElBQUksRUFBRSxTQUFTLEVBQUUsTUFBTSxFQUFFLEVBQUUsRUFBRSxDQUFDOzs2Q0FDMUI7QUFPZDtJQUxDLElBQUEsZ0JBQU0sRUFBQztRQUNOLElBQUksRUFBRSxNQUFNO1FBQ1osSUFBSSxFQUFFLG9CQUFvQjtRQUMxQixPQUFPLEVBQUUsb0JBQW9CLENBQUMsTUFBTTtLQUNyQyxDQUFDOzs4Q0FDMkI7QUFHN0I7SUFEQyxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsVUFBVSxFQUFFLENBQUM7OEJBQ1osSUFBSTt1REFBQztBQUl0QjtJQUZDLElBQUEsZUFBSyxFQUFDLHVDQUF1QyxDQUFDO0lBQzlDLElBQUEsZ0JBQU0sRUFBQyxFQUFFLElBQUksRUFBRSxVQUFVLEVBQUUsQ0FBQzs4QkFDYixJQUFJO3NEQUFDO0FBR3JCO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxNQUFNLEVBQUUsRUFBRSxFQUFFLFFBQVEsRUFBRSxJQUFJLEVBQUUsQ0FBQzs7Z0RBQzdCO0FBR3hCO0lBREMsSUFBQSxnQkFBTSxFQUFDLEVBQUUsSUFBSSxFQUFFLFVBQVUsRUFBRSxRQUFRLEVBQUUsSUFBSSxFQUFFLENBQUM7OEJBQ3BDLElBQUk7K0NBQVE7QUFHckI7SUFEQyxJQUFBLDBCQUFnQixFQUFDLEVBQUUsSUFBSSxFQUFFLFVBQVUsRUFBRSxDQUFDOzhCQUM1QixJQUFJO2lEQUFDO0FBR2hCO0lBREMsSUFBQSwwQkFBZ0IsRUFBQyxFQUFFLElBQUksRUFBRSxVQUFVLEVBQUUsQ0FBQzs4QkFDNUIsSUFBSTtpREFBQztBQU1oQjtJQUpDLElBQUEsbUJBQVMsRUFBQyxHQUFHLEVBQUUsQ0FBQyxrQkFBSSxFQUFFLENBQUMsSUFBSSxFQUFFLEVBQUUsQ0FBQyxJQUFJLENBQUMsZUFBZSxFQUFFO1FBQ3JELFFBQVEsRUFBRSxTQUFTO0tBQ3BCLENBQUM7SUFDRCxJQUFBLG9CQUFVLEVBQUMsRUFBRSxJQUFJLEVBQUUsU0FBUyxFQUFFLENBQUM7OEJBQ3pCLGtCQUFJOzZDQUFDO0FBR1o7SUFEQyxJQUFBLG1CQUFTLEVBQUMsR0FBRyxFQUFFLENBQUMsNENBQWdCLEVBQUUsQ0FBQyxJQUFJLEVBQUUsRUFBRSxDQUFDLElBQUksQ0FBQyxPQUFPLENBQUM7O2tEQUMzQjtBQUcvQjtJQURDLElBQUEsbUJBQVMsRUFBQyxHQUFHLEVBQUUsQ0FBQywwREFBdUIsRUFBRSxDQUFDLFNBQVMsRUFBRSxFQUFFLENBQUMsU0FBUyxDQUFDLE9BQU8sQ0FBQzs7a0RBQ3JDO3lCQTlDM0IsY0FBYztJQU4xQixJQUFBLGdCQUFNLEVBQUMsa0JBQWtCLENBQUM7SUFDMUIsSUFBQSxlQUFLLEVBQUMseUNBQXlDLEVBQUU7UUFDaEQsU0FBUztRQUNULFFBQVE7UUFDUixnQkFBZ0I7S0FDakIsQ0FBQztHQUNXLGNBQWMsQ0ErQzFCIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIkQ6XFxEZXZlbG9wZXJcXFByb2plY3RzXFxLYW50YVR1YmVcXEthbnRhVHViZUJhY2tlbmRcXHNyY1xcbW9kdWxlc1xca2FyYW9rZVxcZW50aXRpZXNcXGthcmFva2Utc2Vzc2lvbi5lbnRpdHkudHMiXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHtcbiAgQ29sdW1uLFxuICBDcmVhdGVEYXRlQ29sdW1uLFxuICBFbnRpdHksXG4gIEluZGV4LFxuICBKb2luQ29sdW1uLFxuICBNYW55VG9PbmUsXG4gIE9uZVRvTWFueSxcbiAgUHJpbWFyeUdlbmVyYXRlZENvbHVtbixcbiAgVXBkYXRlRGF0ZUNvbHVtbixcbn0gZnJvbSAndHlwZW9ybSc7XG5pbXBvcnQgeyBVc2VyIH0gZnJvbSAnLi4vLi4vdXNlcnMvZW50aXRpZXMvdXNlci5lbnRpdHknO1xuaW1wb3J0IHsgS2FyYW9rZVF1ZXVlSXRlbSB9IGZyb20gJy4va2FyYW9rZS1xdWV1ZS1pdGVtLmVudGl0eSc7XG5pbXBvcnQgeyBLYXJhb2tlU2Vzc2lvblBlcmZvcm1lciB9IGZyb20gJy4va2FyYW9rZS1zZXNzaW9uLXBlcmZvcm1lci5lbnRpdHknO1xuXG5leHBvcnQgZW51bSBLYXJhb2tlU2Vzc2lvblN0YXR1cyB7XG4gIEFDVElWRSA9ICdhY3RpdmUnLFxuICBFTkRFRCA9ICdlbmRlZCcsXG4gIEVYUElSRUQgPSAnZXhwaXJlZCcsXG59XG5cbkBFbnRpdHkoJ2thcmFva2Vfc2Vzc2lvbnMnKVxuQEluZGV4KCdpZHhfa2FyYW9rZV9zZXNzaW9uc19vd25lcl9zdGF0dXNfbGVhc2UnLCBbXG4gICdvd25lcklkJyxcbiAgJ3N0YXR1cycsXG4gICdsZWFzZUV4cGlyZXNBdCcsXG5dKVxuZXhwb3J0IGNsYXNzIEthcmFva2VTZXNzaW9uIHtcbiAgQFByaW1hcnlHZW5lcmF0ZWRDb2x1bW4oJ3V1aWQnKVxuICBpZDogc3RyaW5nO1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAnY2hhcicsIGxlbmd0aDogMzYgfSlcbiAgb3duZXJJZDogc3RyaW5nO1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAndmFyY2hhcicsIGxlbmd0aDogMjAgfSlcbiAgYWxpYXM6IHN0cmluZztcblxuICBAQ29sdW1uKHtcbiAgICB0eXBlOiAnZW51bScsXG4gICAgZW51bTogS2FyYW9rZVNlc3Npb25TdGF0dXMsXG4gICAgZGVmYXVsdDogS2FyYW9rZVNlc3Npb25TdGF0dXMuQUNUSVZFLFxuICB9KVxuICBzdGF0dXM6IEthcmFva2VTZXNzaW9uU3RhdHVzO1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAnZGF0ZXRpbWUnIH0pXG4gIGxhc3RIZWFydGJlYXRBdDogRGF0ZTtcblxuICBASW5kZXgoJ2lkeF9rYXJhb2tlX3Nlc3Npb25zX2xlYXNlX2V4cGlyZXNfYXQnKVxuICBAQ29sdW1uKHsgdHlwZTogJ2RhdGV0aW1lJyB9KVxuICBsZWFzZUV4cGlyZXNBdDogRGF0ZTtcblxuICBAQ29sdW1uKHsgdHlwZTogJ2NoYXInLCBsZW5ndGg6IDM2LCBudWxsYWJsZTogdHJ1ZSB9KVxuICBjbGllbnRJZDogc3RyaW5nIHwgbnVsbDtcblxuICBAQ29sdW1uKHsgdHlwZTogJ2RhdGV0aW1lJywgbnVsbGFibGU6IHRydWUgfSlcbiAgZW5kZWRBdDogRGF0ZSB8IG51bGw7XG5cbiAgQENyZWF0ZURhdGVDb2x1bW4oeyB0eXBlOiAnZGF0ZXRpbWUnIH0pXG4gIGNyZWF0ZWRBdDogRGF0ZTtcblxuICBAVXBkYXRlRGF0ZUNvbHVtbih7IHR5cGU6ICdkYXRldGltZScgfSlcbiAgdXBkYXRlZEF0OiBEYXRlO1xuXG4gIEBNYW55VG9PbmUoKCkgPT4gVXNlciwgKHVzZXIpID0+IHVzZXIua2FyYW9rZVNlc3Npb25zLCB7XG4gICAgb25EZWxldGU6ICdDQVNDQURFJyxcbiAgfSlcbiAgQEpvaW5Db2x1bW4oeyBuYW1lOiAnb3duZXJJZCcgfSlcbiAgb3duZXI6IFVzZXI7XG5cbiAgQE9uZVRvTWFueSgoKSA9PiBLYXJhb2tlUXVldWVJdGVtLCAoaXRlbSkgPT4gaXRlbS5zZXNzaW9uKVxuICBxdWV1ZUl0ZW1zOiBLYXJhb2tlUXVldWVJdGVtW107XG5cbiAgQE9uZVRvTWFueSgoKSA9PiBLYXJhb2tlU2Vzc2lvblBlcmZvcm1lciwgKHBlcmZvcm1lcikgPT4gcGVyZm9ybWVyLnNlc3Npb24pXG4gIHBlcmZvcm1lcnM6IEthcmFva2VTZXNzaW9uUGVyZm9ybWVyW107XG59XG4iXSwidmVyc2lvbiI6M30=

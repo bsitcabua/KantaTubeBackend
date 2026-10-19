@@ -1,0 +1,39 @@
+8643c257ddd8689dbb7cb90e9af0c59d
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.OriginGuard = void 0;
+const common_1 = require("@nestjs/common");
+const config_1 = require("@nestjs/config");
+let OriginGuard = class OriginGuard {
+    constructor(config) {
+        this.config = config;
+    }
+    canActivate(context) {
+        const request = context.switchToHttp().getRequest();
+        const origin = request.headers.origin;
+        const allowed = (this.config.get('APP_FRONTEND_URLS') ||
+            this.config.get('APP_FRONTEND_URL') ||
+            'http://localhost:4200')
+            .split(',')
+            .map((value) => value.trim().replace(/\/$/, ''));
+        if (origin && !allowed.includes(origin.replace(/\/$/, ''))) {
+            throw new common_1.ForbiddenException('Request origin is not allowed.');
+        }
+        return true;
+    }
+};
+exports.OriginGuard = OriginGuard;
+exports.OriginGuard = OriginGuard = __decorate([
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [config_1.ConfigService])
+], OriginGuard);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxhdXRoXFxndWFyZHNcXG9yaWdpbi5ndWFyZC50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7QUFBQSwyQ0FLd0I7QUFDeEIsMkNBQStDO0FBSXhDLElBQU0sV0FBVyxHQUFqQixNQUFNLFdBQVc7SUFDdEIsWUFBNkIsTUFBcUI7UUFBckIsV0FBTSxHQUFOLE1BQU0sQ0FBZTtJQUFHLENBQUM7SUFFdEQsV0FBVyxDQUFDLE9BQXlCO1FBQ25DLE1BQU0sT0FBTyxHQUFHLE9BQU8sQ0FBQyxZQUFZLEVBQUUsQ0FBQyxVQUFVLEVBQVcsQ0FBQztRQUM3RCxNQUFNLE1BQU0sR0FBRyxPQUFPLENBQUMsT0FBTyxDQUFDLE1BQU0sQ0FBQztRQUN0QyxNQUFNLE9BQU8sR0FBRyxDQUNkLElBQUksQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFTLG1CQUFtQixDQUFDO1lBQzVDLElBQUksQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFTLGtCQUFrQixDQUFDO1lBQzNDLHVCQUF1QixDQUN4QjthQUNFLEtBQUssQ0FBQyxHQUFHLENBQUM7YUFDVixHQUFHLENBQUMsQ0FBQyxLQUFLLEVBQUUsRUFBRSxDQUFDLEtBQUssQ0FBQyxJQUFJLEVBQUUsQ0FBQyxPQUFPLENBQUMsS0FBSyxFQUFFLEVBQUUsQ0FBQyxDQUFDLENBQUM7UUFDbkQsSUFBSSxNQUFNLElBQUksQ0FBQyxPQUFPLENBQUMsUUFBUSxDQUFDLE1BQU0sQ0FBQyxPQUFPLENBQUMsS0FBSyxFQUFFLEVBQUUsQ0FBQyxDQUFDLEVBQUUsQ0FBQztZQUMzRCxNQUFNLElBQUksMkJBQWtCLENBQUMsZ0NBQWdDLENBQUMsQ0FBQztRQUNqRSxDQUFDO1FBQ0QsT0FBTyxJQUFJLENBQUM7SUFDZCxDQUFDO0NBQ0YsQ0FBQTtBQWxCWSxrQ0FBVztzQkFBWCxXQUFXO0lBRHZCLElBQUEsbUJBQVUsR0FBRTtxQ0FFMEIsc0JBQWE7R0FEdkMsV0FBVyxDQWtCdkIiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxhdXRoXFxndWFyZHNcXG9yaWdpbi5ndWFyZC50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQge1xuICBDYW5BY3RpdmF0ZSxcbiAgRXhlY3V0aW9uQ29udGV4dCxcbiAgRm9yYmlkZGVuRXhjZXB0aW9uLFxuICBJbmplY3RhYmxlLFxufSBmcm9tICdAbmVzdGpzL2NvbW1vbic7XG5pbXBvcnQgeyBDb25maWdTZXJ2aWNlIH0gZnJvbSAnQG5lc3Rqcy9jb25maWcnO1xuaW1wb3J0IHsgUmVxdWVzdCB9IGZyb20gJ2V4cHJlc3MnO1xuXG5ASW5qZWN0YWJsZSgpXG5leHBvcnQgY2xhc3MgT3JpZ2luR3VhcmQgaW1wbGVtZW50cyBDYW5BY3RpdmF0ZSB7XG4gIGNvbnN0cnVjdG9yKHByaXZhdGUgcmVhZG9ubHkgY29uZmlnOiBDb25maWdTZXJ2aWNlKSB7fVxuXG4gIGNhbkFjdGl2YXRlKGNvbnRleHQ6IEV4ZWN1dGlvbkNvbnRleHQpOiBib29sZWFuIHtcbiAgICBjb25zdCByZXF1ZXN0ID0gY29udGV4dC5zd2l0Y2hUb0h0dHAoKS5nZXRSZXF1ZXN0PFJlcXVlc3Q+KCk7XG4gICAgY29uc3Qgb3JpZ2luID0gcmVxdWVzdC5oZWFkZXJzLm9yaWdpbjtcbiAgICBjb25zdCBhbGxvd2VkID0gKFxuICAgICAgdGhpcy5jb25maWcuZ2V0PHN0cmluZz4oJ0FQUF9GUk9OVEVORF9VUkxTJykgfHxcbiAgICAgIHRoaXMuY29uZmlnLmdldDxzdHJpbmc+KCdBUFBfRlJPTlRFTkRfVVJMJykgfHxcbiAgICAgICdodHRwOi8vbG9jYWxob3N0OjQyMDAnXG4gICAgKVxuICAgICAgLnNwbGl0KCcsJylcbiAgICAgIC5tYXAoKHZhbHVlKSA9PiB2YWx1ZS50cmltKCkucmVwbGFjZSgvXFwvJC8sICcnKSk7XG4gICAgaWYgKG9yaWdpbiAmJiAhYWxsb3dlZC5pbmNsdWRlcyhvcmlnaW4ucmVwbGFjZSgvXFwvJC8sICcnKSkpIHtcbiAgICAgIHRocm93IG5ldyBGb3JiaWRkZW5FeGNlcHRpb24oJ1JlcXVlc3Qgb3JpZ2luIGlzIG5vdCBhbGxvd2VkLicpO1xuICAgIH1cbiAgICByZXR1cm4gdHJ1ZTtcbiAgfVxufVxuIl0sInZlcnNpb24iOjN9
