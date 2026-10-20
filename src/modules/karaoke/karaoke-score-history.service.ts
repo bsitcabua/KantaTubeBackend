@@ -153,16 +153,14 @@ export class KaraokeScoreHistoryService {
 
   async list(ownerId: string, sessionIdInput: unknown, clientIdInput?: unknown): Promise<KaraokeScoreHistoryResponse[]> {
     const sessionId = this.requiredUuid(sessionIdInput, 'sessionId');
-    const session = await this.sessions.get(ownerId, sessionId, this.optionalUuid(clientIdInput, 'clientId'));
-    this.assertActive(session);
+    await this.sessions.get(ownerId, sessionId, this.optionalUuid(clientIdInput, 'clientId'));
     const rows = await this.history.find({ where: { sessionId }, order: { completedAt: 'DESC', id: 'DESC' }, take: HISTORY_QUERY_LIMIT });
     return rows.map((row) => this.toResponse(row));
   }
 
   async leaderboard(ownerId: string, sessionIdInput: unknown, clientIdInput?: unknown): Promise<KaraokeScoreLeaderboardResponse> {
     const sessionId = this.requiredUuid(sessionIdInput, 'sessionId');
-    const session = await this.sessions.get(ownerId, sessionId, this.optionalUuid(clientIdInput, 'clientId'));
-    this.assertActive(session);
+    await this.sessions.get(ownerId, sessionId, this.optionalUuid(clientIdInput, 'clientId'));
     const rows = await this.history.find({ where: { sessionId }, order: { completedAt: 'ASC', id: 'ASC' }, take: HISTORY_QUERY_LIMIT });
     return buildKaraokeLeaderboard(rows.map((row) => ({ performerName: row.performerNameSnapshot, score: row.score, completedAt: row.completedAt })));
   }

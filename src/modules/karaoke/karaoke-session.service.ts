@@ -325,12 +325,18 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
   ): Promise<KaraokeSessionResponse> {
     await this.expireStale(ownerId, id);
     const session = await this.findOwned(ownerId, id);
-    this.assertClientOwnership(
-      session,
-      this.normalizeClientId(clientIdInput),
-      false,
-      false,
-    );
+    // Historical sessions are read-only account data and are not tied to the
+    // device that originally hosted them. Keep client ownership enforcement
+    // for active sessions, where it protects the live karaoke session from a
+    // second device taking over playback state.
+    if (session.status === KaraokeSessionStatus.ACTIVE) {
+      this.assertClientOwnership(
+        session,
+        this.normalizeClientId(clientIdInput),
+        false,
+        false,
+      );
+    }
     return this.toResponse(session);
   }
 
