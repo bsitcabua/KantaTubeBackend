@@ -8,13 +8,18 @@ import {
   Logger,
   Post,
   Patch,
+  Param,
   Query,
   Redirect,
   Req,
   Res,
+  UploadedFile,
+  UseInterceptors,
   UseGuards,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { User } from '../users/entities/user.entity';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -22,6 +27,11 @@ import { AuthProvider } from './entities/auth-account.entity';
 import { OAuthRateLimitGuard } from './guards/oauth-rate-limit.guard';
 import { OriginGuard } from './guards/origin.guard';
 import { SessionAuthGuard } from './guards/session-auth.guard';
+import {
+  PROFILE_PHOTO_MAX_FILE_SIZE_BYTES,
+  profilePhotoFileFilter,
+  ProfilePhotoUpload,
+} from './profile-photo.upload';
 
 @Controller('auth')
 export class AuthController {
@@ -113,6 +123,21 @@ export class AuthController {
     );
   }
 
+  @Delete('sessions/:sessionId')
+  @UseGuards(OriginGuard, SessionAuthGuard)
+  async revokeSession(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+    @Req() request: Request,
+  ) {
+    await this.auth.revokeSessionById(
+      user.id,
+      sessionId,
+      this.readCookie(request, this.auth.cookieName),
+    );
+    return { success: true };
+  }
+
   @Get('socket-ticket')
   @UseGuards(SessionAuthGuard)
   socketTicket(@Req() request: Request) {
@@ -125,6 +150,28 @@ export class AuthController {
   @UseGuards(OriginGuard, SessionAuthGuard)
   updateProfile(@CurrentUser() user: User, @Body() body: { fullName?: string; phoneNumber?: string; addressLine?: string; city?: string; province?: string; postalCode?: string; country?: string }) {
     return this.auth.updateProfile(user.id, body);
+  }
+
+  @Patch('profile/photo')
+  @UseGuards(OriginGuard, SessionAuthGuard)
+  @UseInterceptors(
+    FileInterceptor('photo', {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: PROFILE_PHOTO_MAX_FILE_SIZE_BYTES,
+        files: 1,
+        fields: 1,
+        fieldSize: 100,
+      },
+      fileFilter: profilePhotoFileFilter,
+    }),
+  )
+  updateProfilePhoto(
+    @CurrentUser() user: User,
+    @Body() body: { avatarId?: string | number },
+    @UploadedFile() file: ProfilePhotoUpload | undefined,
+  ) {
+    return this.auth.updateProfilePhoto(user.id, body?.avatarId, file);
   }
 
   @Post('logout')
