@@ -25,6 +25,7 @@ export interface CurrentUserResponse {
 }
 
 export interface AuthSessionSummaryResponse {
+  id: string;
   deviceLabel: string;
   browserLabel: string;
   lastActiveAt: Date;
