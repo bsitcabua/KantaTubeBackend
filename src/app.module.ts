@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ServeStaticModule } from '@nestjs/serve-static';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { join } from 'path';
 import { VisitorsModule } from './modules/visitors/visitors.module';
 import { SearchGateway } from './search.gateway';
 import { SearchLogsModule } from './modules/search-logs/search-logs.module';
@@ -19,6 +21,11 @@ import { SongbookModule } from './modules/songbook/songbook.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true, // Makes the config available globally
+    }),
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'uploads', 'profile-avatars'),
+      serveRoot: '/uploads/profile-avatars',
+      serveStaticOptions: { index: false },
     }),
     TypeOrmModule.forRoot(getDatabaseOptions()),
     VisitorsModule,

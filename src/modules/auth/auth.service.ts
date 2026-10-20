@@ -2,6 +2,7 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  NotFoundException,
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -9,7 +10,9 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
 import { randomInt, scrypt as scryptCallback, timingSafeEqual } from 'crypto';
+import { mkdir, unlink, writeFile } from 'fs/promises';
 import { IsNull, LessThan, MoreThan, Repository } from 'typeorm';
+import { join } from 'path';
 import { promisify } from 'util';
 import { User, UserStatus } from '../users/entities/user.entity';
 import { AuthSessionSummaryResponse, CurrentUserResponse, ProviderProfile } from './auth.types';
@@ -26,6 +29,12 @@ import {
   createSocketTicket,
   verifySocketTicket,
 } from './socket-ticket';
+import {
+  PROFILE_AVATAR_IDS,
+  ProfilePhotoUpload,
+  createSafeProfilePhotoFilename,
+  validateProfilePhotoUpload,
+} from './profile-photo.upload';
 
 export interface StartedOAuthLogin {
   authorizationUrl: string;
@@ -849,6 +858,49 @@ export class AuthService {
     return this.getCurrentUser(user.id);
   }
 
+  async updateProfilePhoto(
+    userId: string,
+    avatarId: string | number | undefined,
+    file?: ProfilePhotoUpload,
+  ): Promise<CurrentUserResponse> {
+    const user = await this.users.findOne({
+      where: { id: userId },
+      relations: { authAccounts: true },
+    });
+    if (!user) throw new UnauthorizedException();
+    if (file && avatarId !== undefined && avatarId !== null && String(avatarId).trim() !== '') {
+      throw new ConflictException('Choose a preset avatar or upload a photo, not both.');
+    }
+
+    const normalizedAvatarId = avatarId === undefined || avatarId === null ? null : Number(avatarId);
+    if (!file && (!Number.isInteger(normalizedAvatarId) || !PROFILE_AVATAR_IDS.has(normalizedAvatarId))) {
+      throw new ConflictException('Choose one of the available KantaTube avatars.');
+    }
+
+    let storedPath: string | undefined;
+    let nextAvatarUrl: string;
+    if (file) {
+      const format = validateProfilePhotoUpload(file);
+      const uploadDirectory = join(process.cwd(), 'uploads', 'profile-avatars');
+      await mkdir(uploadDirectory, { recursive: true });
+      const filename = createSafeProfilePhotoFilename(format, randomBytes(16).toString('hex'));
+      storedPath = join(uploadDirectory, filename);
+      await writeFile(storedPath, file.buffer, { flag: 'wx', mode: 0o600 });
+      nextAvatarUrl = `${this.backendUrl}/uploads/profile-avatars/${filename}`;
+    } else {
+      nextAvatarUrl = `/avatars/${normalizedAvatarId}.png`;
+    }
+
+    try {
+      user.avatarUrl = nextAvatarUrl;
+      await this.users.save(user);
+      return this.getCurrentUser(user.id);
+    } catch (error) {
+      if (storedPath) await unlink(storedPath).catch(() => undefined);
+      throw error;
+    }
+  }
+
   async revokeSession(rawToken?: string): Promise<void> {
     if (!rawToken) return;
     await this.sessions.update(
@@ -861,6 +913,26 @@ export class AuthService {
     await this.revokeUserSessions(this.sessions, userId, new Date());
   }
 
+  async revokeSessionById(
+    userId: string,
+    sessionId: string,
+    rawToken?: string,
+  ): Promise<void> {
+    const session = await this.sessions.findOne({
+      where: { id: sessionId, userId, revokedAt: IsNull(), expiresAt: MoreThan(new Date()) },
+    });
+    if (!session) throw new NotFoundException('Session not found or already signed out.');
+
+    if (rawToken && session.tokenHash === this.hash(rawToken)) {
+      throw new ConflictException('Use the current-device logout action to sign out this device.');
+    }
+
+    await this.sessions.update(
+      { id: session.id, userId, revokedAt: IsNull() },
+      { revokedAt: new Date() },
+    );
+  }
+
   async listSessionSummaries(userId: string, rawToken?: string): Promise<AuthSessionSummaryResponse[]> {
     await this.sessions.delete({ expiresAt: LessThan(new Date()) });
     const currentTokenHash = rawToken ? this.hash(rawToken) : null;
@@ -869,6 +941,7 @@ export class AuthService {
       order: { lastUsedAt: 'DESC', createdAt: 'DESC' },
     });
     return sessions.map((session) => ({
+      id: session.id,
       deviceLabel: this.deviceLabel(session.userAgent),
       browserLabel: this.browserLabel(session.userAgent),
       lastActiveAt: session.lastUsedAt,
@@ -945,6 +1018,16 @@ export class AuthService {
     ).replace(/\/$/, '');
   }
 
+  private get backendUrl(): string {
+    const configured = this.config.get<string>('APP_BACKEND_URL')?.trim();
+    if (configured) return configured.replace(/\/$/, '');
+    return `http://localhost:${this.config.get<number>('PORT') || 3000}`;
+  }
+
+  private isKantaTubeManagedAvatar(avatarUrl: string | null): boolean {
+    return !!avatarUrl && (avatarUrl.startsWith('/avatars/') || avatarUrl.includes('/uploads/profile-avatars/'));
+  }
+
   private async findOrCreateUser(profile: ProviderProfile): Promise<User> {
     let account = await this.accounts.findOne({
       where: {
@@ -968,7 +1051,7 @@ export class AuthService {
       const previousProviderAvatar = account.providerAvatarUrl;
       account.providerAvatarUrl = profile.avatarUrl || previousProviderAvatar;
       account.user.displayName = profile.displayName;
-      if (profile.avatarUrl) account.user.avatarUrl = profile.avatarUrl;
+      if (profile.avatarUrl && !this.isKantaTubeManagedAvatar(account.user.avatarUrl)) account.user.avatarUrl = profile.avatarUrl;
       else if (!account.user.avatarUrl && previousProviderAvatar)
         account.user.avatarUrl = previousProviderAvatar;
       account.user.lastLoginAt = new Date();

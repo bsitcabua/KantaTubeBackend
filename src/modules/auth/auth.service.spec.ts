@@ -459,4 +459,28 @@ describe('AuthService', () => {
     await expect(context.service.completeAccountRecovery('one-time-token'))
       .rejects.toThrow('expired');
   });
+
+  it('revokes another authenticated session by id but protects the current session', async () => {
+    const context = setup();
+    const session = {
+      id: 'session-2',
+      userId: 'user-1',
+      tokenHash: (context.service as any).hash('current-token'),
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      userAgent: 'test browser',
+    };
+    context.sessions.findOne.mockResolvedValue(session);
+
+    await context.service.revokeSessionById('user-1', 'session-2', 'other-token');
+    expect(context.sessions.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'session-2', userId: 'user-1' }),
+      { revokedAt: expect.any(Date) },
+    );
+
+    context.sessions.update.mockClear();
+    await expect(context.service.revokeSessionById('user-1', 'session-2', 'current-token'))
+      .rejects.toThrow('current-device');
+    expect(context.sessions.update).not.toHaveBeenCalled();
+  });
 });
