@@ -12,6 +12,7 @@ import {
   RemoteAuthorizationService,
   RemoteSessionKind,
 } from './modules/karaoke/remote-authorization.service';
+import { KaraokeUsageService } from './modules/karaoke/karaoke-usage.service';
 import {
   KaraokeLibraryChange,
   KaraokeLibraryEventsService,
@@ -104,6 +105,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly remoteAuthorization?: RemoteAuthorizationService,
     @Optional() private readonly rateLimiter?: RateLimiterService,
     @Optional() private readonly libraryEvents?: KaraokeLibraryEventsService,
+    @Optional() private readonly usage?: KaraokeUsageService,
   ) {
     this.removeInvalidationListener =
       this.remoteAuthorization?.onSessionInvalidated?.(
@@ -180,6 +182,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       context.kind === 'main' &&
       this.mainSocketBySession.get(this.sessionKey(context)) === client.id
     ) {
+      void this.usage?.disconnectHost(context.sessionId, client.id);
       this.mainSocketBySession.delete(this.sessionKey(context));
       this.server
         ?.to(this.room(context.sessionId, context.sessionKind))
@@ -642,6 +645,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     client.data.kantaTube = context;
     this.mainSocketBySession.set(this.sessionKey(context), client.id);
+    await this.usage?.connectHost(user.id, sessionId, client.id);
     await client.join(this.room(sessionId, sessionKind));
     if (context.ownerId) await client.join(this.accountRoom(context.ownerId));
     this.server
@@ -843,6 +847,13 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         context.grantId,
         context.sessionKind,
       );
+      if (context.accountId) {
+        await this.usage?.assertRemoteCommandAccess(
+          context.accountId,
+          context.sessionId,
+          eventName,
+        );
+      }
     } catch (error) {
       return this.fail(client, ...this.errorTuple(error));
     }
@@ -1542,8 +1553,11 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   } {
     const response = (error as { response?: unknown })?.response;
     const record = this.isRecord(response) ? response : {};
-    const code = this.isSocketErrorCode(record.code)
-      ? record.code
+    const rawCode = record.code === 'karaoke_quota_exhausted'
+      ? 'QUOTA_EXHAUSTED'
+      : record.code;
+    const code = this.isSocketErrorCode(rawCode)
+      ? rawCode
       : record.statusCode === 400
         ? 'INVALID_PAYLOAD'
         : 'REMOTE_NOT_AUTHORIZED';
@@ -1569,6 +1583,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       'RATE_LIMITED',
       'MAIN_CLIENT_OFFLINE',
       'QUEUE_FULL',
+      'QUOTA_EXHAUSTED',
       'DUPLICATE_MAIN_CLIENT',
     ].includes(value as string);
   }

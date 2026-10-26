@@ -28,7 +28,8 @@ export interface AuthSessionSummaryResponse {
   id: string;
   deviceLabel: string;
   browserLabel: string;
-  lastActiveAt: Date;
-  createdAt: Date;
+  /** Absolute instants serialized as UTC ISO-8601 strings. */
+  lastActiveAt: string;
+  createdAt: string;
   isCurrent: boolean;
 }

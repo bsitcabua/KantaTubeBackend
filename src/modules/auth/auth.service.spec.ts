@@ -178,6 +178,87 @@ describe('AuthService', () => {
     ).resolves.toBeNull();
   });
 
+  it('serializes the authenticated /me user without a second profile lookup', () => {
+    const context = setup();
+    const user = {
+      id: 'user-1',
+      displayName: 'Kanta Singer',
+      email: 'singer@example.com',
+      emailVerified: true,
+      avatarUrl: '  https://example.test/avatar.png  ',
+      phoneNumber: null,
+      addressLine: null,
+      city: null,
+      province: null,
+      postalCode: null,
+      country: null,
+      status: UserStatus.ACTIVE,
+      deletedAt: null,
+      authAccounts: [{ provider: AuthProvider.GOOGLE }],
+    };
+
+    expect(context.service.getCurrentUserFromAuthenticatedUser(user as any)).toEqual({
+      id: 'user-1',
+      displayName: 'Kanta Singer',
+      email: 'singer@example.com',
+      emailVerified: true,
+      avatarUrl: 'https://example.test/avatar.png',
+      providers: [AuthProvider.GOOGLE],
+      phoneNumber: null,
+      addressLine: null,
+      city: null,
+      province: null,
+      postalCode: null,
+      country: null,
+    });
+    expect(context.users.findOne).not.toHaveBeenCalled();
+  });
+
+  it('does not wait for last-used session bookkeeping', async () => {
+    const rawToken = 'application-session-token';
+    const context = setup();
+    const session = {
+      id: 'auth-session-1',
+      userId: 'user-1',
+      tokenHash: (context.service as any).hash(rawToken),
+      lastUsedAt: new Date(Date.now() - 10 * 60 * 1000),
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      user: { id: 'user-1', status: UserStatus.ACTIVE, deletedAt: null },
+    };
+    context.sessions.findOne.mockResolvedValue(session);
+    context.sessions.update.mockImplementation(() => new Promise(() => undefined));
+
+    await expect(context.service.authenticate(rawToken)).resolves.toEqual(session.user);
+    expect(context.sessions.update).toHaveBeenCalledWith(
+      { id: session.id },
+      { lastUsedAt: expect.any(Date) },
+    );
+  });
+
+  it('coalesces concurrent last-used bookkeeping updates', async () => {
+    const rawToken = 'application-session-token';
+    const context = setup();
+    const session = {
+      id: 'auth-session-1',
+      userId: 'user-1',
+      tokenHash: (context.service as any).hash(rawToken),
+      lastUsedAt: new Date(Date.now() - 10 * 60 * 1000),
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      user: { id: 'user-1', status: UserStatus.ACTIVE, deletedAt: null },
+    };
+    context.sessions.findOne.mockResolvedValue(session);
+    context.sessions.update.mockImplementation(() => new Promise(() => undefined));
+
+    await Promise.all([
+      context.service.authenticate(rawToken),
+      context.service.authenticate(rawToken),
+    ]);
+
+    expect(context.sessions.update).toHaveBeenCalledTimes(1);
+  });
+
   it('issues a session-bound socket ticket without exposing the application session token', async () => {
     const rawToken = 'application-session-token';
     const context = setup();

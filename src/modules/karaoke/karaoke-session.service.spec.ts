@@ -10,6 +10,7 @@ import { KaraokeQueueItem } from './entities/karaoke-queue-item.entity';
 import { KaraokeSessionPerformer } from './entities/karaoke-session-performer.entity';
 import { KaraokeRemoteHostSession } from './entities/karaoke-remote-host-session.entity';
 import { KaraokeSessionService } from './karaoke-session.service';
+import { KaraokeUsageService } from './karaoke-usage.service';
 
 describe('KaraokeSessionService', () => {
   const ownerId = '123e4567-e89b-42d3-a456-426614174000';
@@ -36,6 +37,7 @@ describe('KaraokeSessionService', () => {
     repository?: Partial<Repository<KaraokeSession>>;
     leaseSeconds?: string;
     maxActiveSessions?: string;
+    usage?: Partial<KaraokeUsageService>;
   }) {
     const repository = {
       update: jest.fn().mockResolvedValue({ affected: 0 }),
@@ -59,9 +61,31 @@ describe('KaraokeSessionService', () => {
         repository,
         queueRepository,
         config,
+        options?.usage as KaraokeUsageService | undefined,
       ),
     };
   }
+
+  it('allows the owner to read leaderboard data for an ended session', async () => {
+    const historicalSession = session({
+      status: KaraokeSessionStatus.ENDED,
+      endedAt: new Date(),
+      leaseExpiresAt: new Date(Date.now() - 60_000),
+    });
+    const { service } = createService({
+      repository: { findOne: jest.fn().mockResolvedValue(historicalSession) },
+    });
+
+    await expect(service.assertScoreReadAccess(ownerId, sessionId)).resolves.toBeUndefined();
+  });
+
+  it('does not authorize leaderboard reads for a session owned by another account', async () => {
+    const { service } = createService({
+      repository: { findOne: jest.fn().mockResolvedValue(null) },
+    });
+
+    await expect(service.assertScoreReadAccess(ownerId, sessionId)).rejects.toThrow('Karaoke session not found.');
+  });
 
   it('serializes concurrent creation and rejects a third active session', async () => {
     const stored: KaraokeSession[] = [];
@@ -160,6 +184,53 @@ describe('KaraokeSessionService', () => {
     });
   });
 
+  it('runs daily rollover before lease expiration when resolving current sessions', async () => {
+    const yesterdayLocked = session({
+      status: KaraokeSessionStatus.LOCKED_QUOTA,
+      sessionDay: '2026-10-21',
+    });
+    const order: string[] = [];
+    const dataSource = {
+      transaction: jest.fn((work) =>
+        work({
+          getRepository: () => ({
+            find: jest.fn(async () => {
+              order.push('expire');
+              return [];
+            }),
+          }),
+        }),
+      ),
+    } as unknown as DataSource;
+    const usage = {
+      configuration: { maxCurrentSessions: 1 } as KaraokeUsageService['configuration'],
+      rolloverOwner: jest.fn(async () => {
+        order.push('rollover');
+        yesterdayLocked.status = KaraokeSessionStatus.ENDED;
+        yesterdayLocked.endedAt = new Date('2026-10-22T00:00:01.000Z');
+      }),
+    } as Partial<KaraokeUsageService>;
+    const { service, repository } = createService({
+      dataSource,
+      repository: {
+        find: jest.fn(async () => {
+          order.push('list');
+          return yesterdayLocked.status === KaraokeSessionStatus.ENDED
+            ? []
+            : [yesterdayLocked];
+        }),
+      },
+      usage,
+    });
+
+    await expect(service.listActive(ownerId)).resolves.toEqual([]);
+
+    expect(usage.rolloverOwner).toHaveBeenCalledWith(ownerId);
+    expect(order).toEqual(['rollover', 'expire', 'list']);
+    expect(yesterdayLocked.status).toBe(KaraokeSessionStatus.ENDED);
+    expect(repository.find).toHaveBeenCalled();
+  });
+
   it('extends the lease for an active owned session', async () => {
     const existing = session();
     const transactionRepository = {
@@ -180,7 +251,7 @@ describe('KaraokeSessionService', () => {
 
     const result = await service.heartbeat(ownerId, sessionId);
 
-    expect(result.leaseExpiresAt.getTime()).toBeGreaterThan(oldExpiry);
+    expect(Date.parse(result.leaseExpiresAt)).toBeGreaterThan(oldExpiry);
     expect(transactionRepository.findOne).toHaveBeenCalledWith({
       where: { id: sessionId, ownerId },
       lock: { mode: 'pessimistic_write' },
@@ -475,7 +546,12 @@ describe('KaraokeSessionService', () => {
       findOne: jest.fn().mockImplementation(async () => claimedSession),
       create: jest.fn((value) => value),
       save: jest.fn(async (value) => {
-        claimedSession = value as KaraokeSession;
+        const now = new Date();
+        claimedSession = {
+          ...(value as KaraokeSession),
+          createdAt: (value as KaraokeSession).createdAt ?? now,
+          updatedAt: (value as KaraokeSession).updatedAt ?? now,
+        };
         return claimedSession;
       }),
     };

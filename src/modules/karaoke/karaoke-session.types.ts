@@ -8,11 +8,25 @@ export interface KaraokeSessionResponse {
   id: string;
   alias: string;
   status: KaraokeSessionStatus;
-  lastHeartbeatAt: Date;
-  leaseExpiresAt: Date;
-  endedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
+  /** Absolute instants serialized as UTC ISO-8601 strings. */
+  lastHeartbeatAt: string;
+  leaseExpiresAt: string;
+  endedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  usage?: KaraokeUsageSummaryResponse;
+}
+
+export interface KaraokeUsageSummaryResponse {
+  usageDate: string;
+  dailyAllowanceSeconds: number;
+  usedSeconds: number;
+  remainingSeconds: number;
+  accessSource: 'free' | 'paid';
+  quotaLocked: boolean;
+  quotaExhaustionPending: boolean;
+  canUseKaraoke: boolean;
+  nextResetAt: string;
 }
 
 export interface KaraokeSessionHistorySummaryResponse extends KaraokeSessionResponse {

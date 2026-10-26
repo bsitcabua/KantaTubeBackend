@@ -38,6 +38,9 @@ export class KaraokeQueueItem {
   @Column({ type: 'varchar', length: 60 })
   performer: string;
 
+  @Column({ type: 'boolean', default: false })
+  scoreEligible: boolean;
+
   @CreateDateColumn({ type: 'datetime' })
   createdAt: Date;
 

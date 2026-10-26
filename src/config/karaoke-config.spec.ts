@@ -4,6 +4,7 @@ import {
   parseBoolean,
   parseBuyMeACoffeeConfig,
   parseMaxKaraokeQueueSize,
+  parseKaraokeUsageConfig,
 } from './karaoke-config';
 
 describe('karaoke configuration', () => {
@@ -100,5 +101,9 @@ describe('karaoke configuration', () => {
 
   it('defaults automatic support prompts to false for an invalid flag', () => {
     expect(parseBuyMeACoffeeConfig({ autoShow: 'abc' }).autoShow).toBe(false);
+  });
+
+  it('keeps the business calendar fixed to Asia/Manila', () => {
+    expect(parseKaraokeUsageConfig({ resetTimezone: 'America/Los_Angeles' }).resetTimezone).toBe('Asia/Manila');
   });
 });

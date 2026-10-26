@@ -1,0 +1,50 @@
+4ea7c90789299c96fe4c7070c8239b0a
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EmailVerificationCode = void 0;
+const typeorm_1 = require("typeorm");
+let EmailVerificationCode = class EmailVerificationCode {
+};
+exports.EmailVerificationCode = EmailVerificationCode;
+__decorate([
+    (0, typeorm_1.PrimaryGeneratedColumn)('uuid'),
+    __metadata("design:type", String)
+], EmailVerificationCode.prototype, "id", void 0);
+__decorate([
+    (0, typeorm_1.Index)('idx_email_verification_email'),
+    (0, typeorm_1.Column)({ type: 'varchar', length: 254 }),
+    __metadata("design:type", String)
+], EmailVerificationCode.prototype, "email", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'char', length: 64 }),
+    __metadata("design:type", String)
+], EmailVerificationCode.prototype, "codeHash", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'datetime' }),
+    __metadata("design:type", Date)
+], EmailVerificationCode.prototype, "expiresAt", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'datetime', nullable: true }),
+    __metadata("design:type", Date)
+], EmailVerificationCode.prototype, "usedAt", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ type: 'int', default: 0 }),
+    __metadata("design:type", Number)
+], EmailVerificationCode.prototype, "attempts", void 0);
+__decorate([
+    (0, typeorm_1.CreateDateColumn)({ type: 'datetime' }),
+    __metadata("design:type", Date)
+], EmailVerificationCode.prototype, "createdAt", void 0);
+exports.EmailVerificationCode = EmailVerificationCode = __decorate([
+    (0, typeorm_1.Entity)('email_verification_codes')
+], EmailVerificationCode);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxhdXRoXFxlbnRpdGllc1xcZW1haWwtdmVyaWZpY2F0aW9uLWNvZGUuZW50aXR5LnRzIiwibWFwcGluZ3MiOiI7Ozs7Ozs7Ozs7OztBQUFBLHFDQU1pQjtBQUdWLElBQU0scUJBQXFCLEdBQTNCLE1BQU0scUJBQXFCO0NBc0JqQyxDQUFBO0FBdEJZLHNEQUFxQjtBQUVoQztJQURDLElBQUEsZ0NBQXNCLEVBQUMsTUFBTSxDQUFDOztpREFDcEI7QUFJWDtJQUZDLElBQUEsZUFBSyxFQUFDLDhCQUE4QixDQUFDO0lBQ3JDLElBQUEsZ0JBQU0sRUFBQyxFQUFFLElBQUksRUFBRSxTQUFTLEVBQUUsTUFBTSxFQUFFLEdBQUcsRUFBRSxDQUFDOztvREFDM0I7QUFHZDtJQURDLElBQUEsZ0JBQU0sRUFBQyxFQUFFLElBQUksRUFBRSxNQUFNLEVBQUUsTUFBTSxFQUFFLEVBQUUsRUFBRSxDQUFDOzt1REFDcEI7QUFHakI7SUFEQyxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsVUFBVSxFQUFFLENBQUM7OEJBQ2xCLElBQUk7d0RBQUM7QUFHaEI7SUFEQyxJQUFBLGdCQUFNLEVBQUMsRUFBRSxJQUFJLEVBQUUsVUFBVSxFQUFFLFFBQVEsRUFBRSxJQUFJLEVBQUUsQ0FBQzs4QkFDckMsSUFBSTtxREFBUTtBQUdwQjtJQURDLElBQUEsZ0JBQU0sRUFBQyxFQUFFLElBQUksRUFBRSxLQUFLLEVBQUUsT0FBTyxFQUFFLENBQUMsRUFBRSxDQUFDOzt1REFDbkI7QUFHakI7SUFEQyxJQUFBLDBCQUFnQixFQUFDLEVBQUUsSUFBSSxFQUFFLFVBQVUsRUFBRSxDQUFDOzhCQUM1QixJQUFJO3dEQUFDO2dDQXJCTCxxQkFBcUI7SUFEakMsSUFBQSxnQkFBTSxFQUFDLDBCQUEwQixDQUFDO0dBQ3RCLHFCQUFxQixDQXNCakMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFxhdXRoXFxlbnRpdGllc1xcZW1haWwtdmVyaWZpY2F0aW9uLWNvZGUuZW50aXR5LnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7XG4gIENvbHVtbixcbiAgQ3JlYXRlRGF0ZUNvbHVtbixcbiAgRW50aXR5LFxuICBJbmRleCxcbiAgUHJpbWFyeUdlbmVyYXRlZENvbHVtbixcbn0gZnJvbSAndHlwZW9ybSc7XG5cbkBFbnRpdHkoJ2VtYWlsX3ZlcmlmaWNhdGlvbl9jb2RlcycpXG5leHBvcnQgY2xhc3MgRW1haWxWZXJpZmljYXRpb25Db2RlIHtcbiAgQFByaW1hcnlHZW5lcmF0ZWRDb2x1bW4oJ3V1aWQnKVxuICBpZDogc3RyaW5nO1xuXG4gIEBJbmRleCgnaWR4X2VtYWlsX3ZlcmlmaWNhdGlvbl9lbWFpbCcpXG4gIEBDb2x1bW4oeyB0eXBlOiAndmFyY2hhcicsIGxlbmd0aDogMjU0IH0pXG4gIGVtYWlsOiBzdHJpbmc7XG5cbiAgQENvbHVtbih7IHR5cGU6ICdjaGFyJywgbGVuZ3RoOiA2NCB9KVxuICBjb2RlSGFzaDogc3RyaW5nO1xuXG4gIEBDb2x1bW4oeyB0eXBlOiAnZGF0ZXRpbWUnIH0pXG4gIGV4cGlyZXNBdDogRGF0ZTtcblxuICBAQ29sdW1uKHsgdHlwZTogJ2RhdGV0aW1lJywgbnVsbGFibGU6IHRydWUgfSlcbiAgdXNlZEF0OiBEYXRlIHwgbnVsbDtcblxuICBAQ29sdW1uKHsgdHlwZTogJ2ludCcsIGRlZmF1bHQ6IDAgfSlcbiAgYXR0ZW1wdHM6IG51bWJlcjtcblxuICBAQ3JlYXRlRGF0ZUNvbHVtbih7IHR5cGU6ICdkYXRldGltZScgfSlcbiAgY3JlYXRlZEF0OiBEYXRlO1xufVxuIl0sInZlcnNpb24iOjN9

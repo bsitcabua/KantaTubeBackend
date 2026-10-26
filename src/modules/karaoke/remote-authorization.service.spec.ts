@@ -24,6 +24,7 @@ describe('RemoteAuthorizationService', () => {
   function createService(
     configValues: Record<string, string> = {},
     session = activeSession,
+    usage?: { rolloverOwner: (ownerId: string) => Promise<void> },
   ) {
     const sessions = {
       findOne: jest.fn().mockResolvedValue(session),
@@ -62,6 +63,7 @@ describe('RemoteAuthorizationService', () => {
         grants,
         hostSessions,
         config,
+        usage as never,
       ),
       sessions,
       pairingSessions,
@@ -82,6 +84,38 @@ describe('RemoteAuthorizationService', () => {
     expect(saved.tokenHash).toMatch(/^[a-f0-9]{64}$/);
     expect(pairingSessions.update).toHaveBeenCalled();
     expect(invitation.expiresAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('keeps a quota-locked session authorized for sockets and remote access', async () => {
+    const lockedSession = {
+      ...activeSession,
+      status: KaraokeSessionStatus.LOCKED_QUOTA,
+      leaseExpiresAt: new Date(Date.now() - 60_000),
+    };
+    const { service } = createService({}, lockedSession);
+
+    await expect(service.findActiveSession(ownerId, sessionId)).resolves.toEqual(
+      lockedSession,
+    );
+  });
+
+  it('does not authorize a previous-day session before daily rollover completes', async () => {
+    const staleSession = {
+      ...activeSession,
+      status: KaraokeSessionStatus.ACTIVE,
+    };
+    const rolloverOwner = jest.fn(async () => {
+      staleSession.status = KaraokeSessionStatus.ENDED;
+    });
+    const { service, sessions } = createService({}, staleSession, { rolloverOwner });
+
+    await expect(service.findActiveSession(ownerId, sessionId)).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'SESSION_EXPIRED' }),
+    });
+
+    expect(rolloverOwner).toHaveBeenCalledWith(ownerId);
+    expect((sessions.findOne as jest.Mock).mock.invocationCallOrder[0])
+      .toBeGreaterThan(rolloverOwner.mock.invocationCallOrder[0]);
   });
 
   it('uses separate pairing-request and approved-grant TTLs', async () => {

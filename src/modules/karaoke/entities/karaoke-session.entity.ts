@@ -15,6 +15,7 @@ import { KaraokeSessionPerformer } from './karaoke-session-performer.entity';
 
 export enum KaraokeSessionStatus {
   ACTIVE = 'active',
+  LOCKED_QUOTA = 'locked_quota',
   ENDED = 'ended',
   EXPIRED = 'expired',
 }
@@ -35,6 +36,9 @@ export class KaraokeSession {
   @Column({ type: 'varchar', length: 20 })
   alias: string;
 
+  @Column({ type: 'date', nullable: true })
+  sessionDay: string | null;
+
   @Column({
     type: 'enum',
     enum: KaraokeSessionStatus,
@@ -54,6 +58,21 @@ export class KaraokeSession {
 
   @Column({ type: 'datetime', nullable: true })
   endedAt: Date | null;
+
+  @Column({ type: 'boolean', default: false })
+  hasStartedSong: boolean;
+
+  @Column({ type: 'datetime', nullable: true })
+  firstSongStartedAt: Date | null;
+
+  @Column({ type: 'boolean', default: false })
+  currentSongActive: boolean;
+
+  @Column({ type: 'char', length: 36, nullable: true })
+  currentQueueItemId: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  quotaExhaustionPending: boolean;
 
   @CreateDateColumn({ type: 'datetime' })
   createdAt: Date;

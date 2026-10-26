@@ -16,8 +16,10 @@ export class SessionAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const requestPath = request.path || request.url || '';
     const user = await this.auth.authenticate(
       this.readCookie(request, this.auth.cookieName),
+      requestPath.endsWith('/auth/me'),
     );
     if (!user) throw new UnauthorizedException();
     request.authUser = user;

@@ -15,7 +15,8 @@ export interface KaraokeScoreHistoryResponse {
   youtubeVideoId: string;
   score: number;
   scoreMessage: string;
-  completedAt: Date;
+  /** Absolute instant serialized as a UTC ISO-8601 string. */
+  completedAt: string;
 }
 
 export interface KaraokeLeaderboardEntry {

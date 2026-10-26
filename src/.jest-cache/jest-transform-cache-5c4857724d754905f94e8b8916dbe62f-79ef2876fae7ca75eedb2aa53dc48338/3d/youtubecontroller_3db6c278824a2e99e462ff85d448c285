@@ -1,0 +1,110 @@
+120913713685687c4c5ceba41333cf50
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.YoutubeController = void 0;
+const common_1 = require("@nestjs/common");
+const current_user_decorator_1 = require("../auth/decorators/current-user.decorator");
+const optional_session_auth_guard_1 = require("../auth/guards/optional-session-auth.guard");
+const origin_guard_1 = require("../auth/guards/origin.guard");
+const session_auth_guard_1 = require("../auth/guards/session-auth.guard");
+const user_entity_1 = require("../users/entities/user.entity");
+const rate_limiter_service_1 = require("../../common/rate-limit/rate-limiter.service");
+const youtube_personal_key_service_1 = require("./youtube-personal-key.service");
+const youtube_service_1 = require("./youtube.service");
+const youtube_dto_1 = require("./youtube.dto");
+let YoutubeController = class YoutubeController {
+    constructor(youtubeService, personalKeyService, rateLimiterService) {
+        this.youtubeService = youtubeService;
+        this.personalKeyService = personalKeyService;
+        this.rateLimiterService = rateLimiterService;
+    }
+    getKeyAliases(visitorId, request) {
+        (0, youtube_dto_1.parseOptionalVisitorId)(visitorId);
+        return this.youtubeService.getKeyAliases(request?.authUser?.id);
+    }
+    registerPersonalKey(request, httpRequest, user) {
+        this.rateLimiterService.checkRegistration(this.getClientId(httpRequest, user.id));
+        const personalKeyRequest = (0, youtube_dto_1.parseYoutubePersonalKeyRequest)(request);
+        return this.personalKeyService.register(user.id, personalKeyRequest.apiKey);
+    }
+    getPersonalKeyStatus(user) {
+        return this.personalKeyService.getStatus(user.id);
+    }
+    removePersonalKey(user) {
+        return this.personalKeyService.remove(user.id);
+    }
+    search(query, keyAlias, visitorId, httpRequest) {
+        const searchRequest = (0, youtube_dto_1.parseYoutubeSearchRequest)(query, keyAlias, visitorId);
+        this.rateLimiterService.checkSearch(this.getClientId(httpRequest, searchRequest.visitorId || httpRequest?.authUser?.id));
+        return this.youtubeService.search(searchRequest.query, searchRequest.keyAlias, httpRequest?.authUser?.id);
+    }
+    getClientId(request, identity) {
+        return `${request?.ip || 'unknown'}:${identity?.trim() || 'anonymous'}`;
+    }
+};
+exports.YoutubeController = YoutubeController;
+__decorate([
+    (0, common_1.Get)('key-aliases'),
+    (0, common_1.UseGuards)(optional_session_auth_guard_1.OptionalSessionAuthGuard),
+    __param(0, (0, common_1.Headers)('x-kantatube-visitor-id')),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Object)
+], YoutubeController.prototype, "getKeyAliases", null);
+__decorate([
+    (0, common_1.Post)('personal-keys'),
+    (0, common_1.UseGuards)(origin_guard_1.OriginGuard, session_auth_guard_1.SessionAuthGuard),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
+    __param(2, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, user_entity_1.User]),
+    __metadata("design:returntype", Object)
+], YoutubeController.prototype, "registerPersonalKey", null);
+__decorate([
+    (0, common_1.Get)('personal-keys/status'),
+    (0, common_1.UseGuards)(session_auth_guard_1.SessionAuthGuard),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [user_entity_1.User]),
+    __metadata("design:returntype", Object)
+], YoutubeController.prototype, "getPersonalKeyStatus", null);
+__decorate([
+    (0, common_1.Delete)('personal-keys'),
+    (0, common_1.UseGuards)(origin_guard_1.OriginGuard, session_auth_guard_1.SessionAuthGuard),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [user_entity_1.User]),
+    __metadata("design:returntype", Object)
+], YoutubeController.prototype, "removePersonalKey", null);
+__decorate([
+    (0, common_1.Get)('search'),
+    (0, common_1.UseGuards)(optional_session_auth_guard_1.OptionalSessionAuthGuard),
+    __param(0, (0, common_1.Query)('q')),
+    __param(1, (0, common_1.Query)('keyAlias')),
+    __param(2, (0, common_1.Headers)('x-kantatube-visitor-id')),
+    __param(3, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object, String, Object]),
+    __metadata("design:returntype", Promise)
+], YoutubeController.prototype, "search", null);
+exports.YoutubeController = YoutubeController = __decorate([
+    (0, common_1.Controller)('youtube'),
+    __metadata("design:paramtypes", [youtube_service_1.YoutubeService,
+        youtube_personal_key_service_1.YoutubePersonalKeyService,
+        rate_limiter_service_1.RateLimiterService])
+], YoutubeController);
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXERldmVsb3BlclxcUHJvamVjdHNcXEthbnRhVHViZVxcS2FudGFUdWJlQmFja2VuZFxcc3JjXFxtb2R1bGVzXFx5b3V0dWJlXFx5b3V0dWJlLmNvbnRyb2xsZXIudHMiLCJtYXBwaW5ncyI6Ijs7Ozs7Ozs7Ozs7Ozs7O0FBQUEsMkNBVXdCO0FBRXhCLHNGQUF3RTtBQUN4RSw0RkFHb0Q7QUFDcEQsOERBQTBEO0FBQzFELDBFQUFxRTtBQUNyRSwrREFBcUQ7QUFDckQsdUZBQWtGO0FBQ2xGLGlGQUEyRTtBQUMzRSx1REFBbUQ7QUFPbkQsK0NBSXVCO0FBR2hCLElBQU0saUJBQWlCLEdBQXZCLE1BQU0saUJBQWlCO0lBQzVCLFlBQ21CLGNBQThCLEVBQzlCLGtCQUE2QyxFQUM3QyxrQkFBc0M7UUFGdEMsbUJBQWMsR0FBZCxjQUFjLENBQWdCO1FBQzlCLHVCQUFrQixHQUFsQixrQkFBa0IsQ0FBMkI7UUFDN0MsdUJBQWtCLEdBQWxCLGtCQUFrQixDQUFvQjtJQUN0RCxDQUFDO0lBSUosYUFBYSxDQUN3QixTQUFrQixFQUM5QyxPQUFzQztRQUU3QyxJQUFBLG9DQUFzQixFQUFDLFNBQVMsQ0FBQyxDQUFDO1FBQ2xDLE9BQU8sSUFBSSxDQUFDLGNBQWMsQ0FBQyxhQUFhLENBQUMsT0FBTyxFQUFFLFFBQVEsRUFBRSxFQUFFLENBQUMsQ0FBQztJQUNsRSxDQUFDO0lBSUQsbUJBQW1CLENBQ1QsT0FBZ0IsRUFDakIsV0FBb0IsRUFDWixJQUFVO1FBRXpCLElBQUksQ0FBQyxrQkFBa0IsQ0FBQyxpQkFBaUIsQ0FDdkMsSUFBSSxDQUFDLFdBQVcsQ0FBQyxXQUFXLEVBQUUsSUFBSSxDQUFDLEVBQUUsQ0FBQyxDQUN2QyxDQUFDO1FBQ0YsTUFBTSxrQkFBa0IsR0FBRyxJQUFBLDRDQUE4QixFQUFDLE9BQU8sQ0FBQyxDQUFDO1FBQ25FLE9BQU8sSUFBSSxDQUFDLGtCQUFrQixDQUFDLFFBQVEsQ0FBQyxJQUFJLENBQUMsRUFBRSxFQUFFLGtCQUFrQixDQUFDLE1BQU0sQ0FBQyxDQUFDO0lBQzlFLENBQUM7SUFJRCxvQkFBb0IsQ0FDSCxJQUFVO1FBRXpCLE9BQU8sSUFBSSxDQUFDLGtCQUFrQixDQUFDLFNBQVMsQ0FBQyxJQUFJLENBQUMsRUFBRSxDQUFDLENBQUM7SUFDcEQsQ0FBQztJQUlELGlCQUFpQixDQUNBLElBQVU7UUFFekIsT0FBTyxJQUFJLENBQUMsa0JBQWtCLENBQUMsTUFBTSxDQUFDLElBQUksQ0FBQyxFQUFFLENBQUMsQ0FBQztJQUNqRCxDQUFDO0lBSUQsTUFBTSxDQUNRLEtBQWMsRUFDUCxRQUFpQixFQUNELFNBQWtCLEVBQzlDLFdBQTBDO1FBRWpELE1BQU0sYUFBYSxHQUFHLElBQUEsdUNBQXlCLEVBQUMsS0FBSyxFQUFFLFFBQVEsRUFBRSxTQUFTLENBQUMsQ0FBQztRQUM1RSxJQUFJLENBQUMsa0JBQWtCLENBQUMsV0FBVyxDQUNqQyxJQUFJLENBQUMsV0FBVyxDQUNkLFdBQVcsRUFDWCxhQUFhLENBQUMsU0FBUyxJQUFJLFdBQVcsRUFBRSxRQUFRLEVBQUUsRUFBRSxDQUNyRCxDQUNGLENBQUM7UUFDRixPQUFPLElBQUksQ0FBQyxjQUFjLENBQUMsTUFBTSxDQUMvQixhQUFhLENBQUMsS0FBSyxFQUNuQixhQUFhLENBQUMsUUFBUSxFQUN0QixXQUFXLEVBQUUsUUFBUSxFQUFFLEVBQUUsQ0FDMUIsQ0FBQztJQUNKLENBQUM7SUFFTyxXQUFXLENBQUMsT0FBaUIsRUFBRSxRQUFpQjtRQUN0RCxPQUFPLEdBQUcsT0FBTyxFQUFFLEVBQUUsSUFBSSxTQUFTLElBQ2hDLFFBQVEsRUFBRSxJQUFJLEVBQUUsSUFBSSxXQUN0QixFQUFFLENBQUM7SUFDTCxDQUFDO0NBQ0YsQ0FBQTtBQTFFWSw4Q0FBaUI7QUFTNUI7SUFGQyxJQUFBLFlBQUcsRUFBQyxhQUFhLENBQUM7SUFDbEIsSUFBQSxrQkFBUyxFQUFDLHNEQUF3QixDQUFDO0lBRWpDLFdBQUEsSUFBQSxnQkFBTyxFQUFDLHdCQUF3QixDQUFDLENBQUE7SUFDakMsV0FBQSxJQUFBLFlBQUcsR0FBRSxDQUFBOzs7O3NEQUlQO0FBSUQ7SUFGQyxJQUFBLGFBQUksRUFBQyxlQUFlLENBQUM7SUFDckIsSUFBQSxrQkFBUyxFQUFDLDBCQUFXLEVBQUUscUNBQWdCLENBQUM7SUFFdEMsV0FBQSxJQUFBLGFBQUksR0FBRSxDQUFBO0lBQ04sV0FBQSxJQUFBLFlBQUcsR0FBRSxDQUFBO0lBQ0wsV0FBQSxJQUFBLG9DQUFXLEdBQUUsQ0FBQTs7cURBQU8sa0JBQUk7OzREQU8xQjtBQUlEO0lBRkMsSUFBQSxZQUFHLEVBQUMsc0JBQXNCLENBQUM7SUFDM0IsSUFBQSxrQkFBUyxFQUFDLHFDQUFnQixDQUFDO0lBRXpCLFdBQUEsSUFBQSxvQ0FBVyxHQUFFLENBQUE7O3FDQUFPLGtCQUFJOzs2REFHMUI7QUFJRDtJQUZDLElBQUEsZUFBTSxFQUFDLGVBQWUsQ0FBQztJQUN2QixJQUFBLGtCQUFTLEVBQUMsMEJBQVcsRUFBRSxxQ0FBZ0IsQ0FBQztJQUV0QyxXQUFBLElBQUEsb0NBQVcsR0FBRSxDQUFBOztxQ0FBTyxrQkFBSTs7MERBRzFCO0FBSUQ7SUFGQyxJQUFBLFlBQUcsRUFBQyxRQUFRLENBQUM7SUFDYixJQUFBLGtCQUFTLEVBQUMsc0RBQXdCLENBQUM7SUFFakMsV0FBQSxJQUFBLGNBQUssRUFBQyxHQUFHLENBQUMsQ0FBQTtJQUNWLFdBQUEsSUFBQSxjQUFLLEVBQUMsVUFBVSxDQUFDLENBQUE7SUFDakIsV0FBQSxJQUFBLGdCQUFPLEVBQUMsd0JBQXdCLENBQUMsQ0FBQTtJQUNqQyxXQUFBLElBQUEsWUFBRyxHQUFFLENBQUE7Ozs7K0NBY1A7NEJBbkVVLGlCQUFpQjtJQUQ3QixJQUFBLG1CQUFVLEVBQUMsU0FBUyxDQUFDO3FDQUdlLGdDQUFjO1FBQ1Ysd0RBQXlCO1FBQ3pCLHlDQUFrQjtHQUo5QyxpQkFBaUIsQ0EwRTdCIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIkQ6XFxEZXZlbG9wZXJcXFByb2plY3RzXFxLYW50YVR1YmVcXEthbnRhVHViZUJhY2tlbmRcXHNyY1xcbW9kdWxlc1xceW91dHViZVxceW91dHViZS5jb250cm9sbGVyLnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7XG4gIEJvZHksXG4gIENvbnRyb2xsZXIsXG4gIERlbGV0ZSxcbiAgR2V0LFxuICBIZWFkZXJzLFxuICBQb3N0LFxuICBRdWVyeSxcbiAgUmVxLFxuICBVc2VHdWFyZHMsXG59IGZyb20gJ0BuZXN0anMvY29tbW9uJztcbmltcG9ydCB7IFJlcXVlc3QgfSBmcm9tICdleHByZXNzJztcbmltcG9ydCB7IEN1cnJlbnRVc2VyIH0gZnJvbSAnLi4vYXV0aC9kZWNvcmF0b3JzL2N1cnJlbnQtdXNlci5kZWNvcmF0b3InO1xuaW1wb3J0IHtcbiAgT3B0aW9uYWxBdXRoZW50aWNhdGVkUmVxdWVzdCxcbiAgT3B0aW9uYWxTZXNzaW9uQXV0aEd1YXJkLFxufSBmcm9tICcuLi9hdXRoL2d1YXJkcy9vcHRpb25hbC1zZXNzaW9uLWF1dGguZ3VhcmQnO1xuaW1wb3J0IHsgT3JpZ2luR3VhcmQgfSBmcm9tICcuLi9hdXRoL2d1YXJkcy9vcmlnaW4uZ3VhcmQnO1xuaW1wb3J0IHsgU2Vzc2lvbkF1dGhHdWFyZCB9IGZyb20gJy4uL2F1dGgvZ3VhcmRzL3Nlc3Npb24tYXV0aC5ndWFyZCc7XG5pbXBvcnQgeyBVc2VyIH0gZnJvbSAnLi4vdXNlcnMvZW50aXRpZXMvdXNlci5lbnRpdHknO1xuaW1wb3J0IHsgUmF0ZUxpbWl0ZXJTZXJ2aWNlIH0gZnJvbSAnLi4vLi4vY29tbW9uL3JhdGUtbGltaXQvcmF0ZS1saW1pdGVyLnNlcnZpY2UnO1xuaW1wb3J0IHsgWW91dHViZVBlcnNvbmFsS2V5U2VydmljZSB9IGZyb20gJy4veW91dHViZS1wZXJzb25hbC1rZXkuc2VydmljZSc7XG5pbXBvcnQgeyBZb3V0dWJlU2VydmljZSB9IGZyb20gJy4veW91dHViZS5zZXJ2aWNlJztcbmltcG9ydCB7XG4gIFlvdXR1YmVLZXlBbGlhc2VzUmVzcG9uc2UsXG4gIFlvdXR1YmVQZXJzb25hbEtleURlbGV0ZVJlc3BvbnNlLFxuICBZb3V0dWJlUGVyc29uYWxLZXlTdGF0dXNSZXNwb25zZSxcbiAgWW91dHViZVNlYXJjaFJlc3BvbnNlLFxufSBmcm9tICcuL3lvdXR1YmUudHlwZXMnO1xuaW1wb3J0IHtcbiAgcGFyc2VPcHRpb25hbFZpc2l0b3JJZCxcbiAgcGFyc2VZb3V0dWJlUGVyc29uYWxLZXlSZXF1ZXN0LFxuICBwYXJzZVlvdXR1YmVTZWFyY2hSZXF1ZXN0LFxufSBmcm9tICcuL3lvdXR1YmUuZHRvJztcblxuQENvbnRyb2xsZXIoJ3lvdXR1YmUnKVxuZXhwb3J0IGNsYXNzIFlvdXR1YmVDb250cm9sbGVyIHtcbiAgY29uc3RydWN0b3IoXG4gICAgcHJpdmF0ZSByZWFkb25seSB5b3V0dWJlU2VydmljZTogWW91dHViZVNlcnZpY2UsXG4gICAgcHJpdmF0ZSByZWFkb25seSBwZXJzb25hbEtleVNlcnZpY2U6IFlvdXR1YmVQZXJzb25hbEtleVNlcnZpY2UsXG4gICAgcHJpdmF0ZSByZWFkb25seSByYXRlTGltaXRlclNlcnZpY2U6IFJhdGVMaW1pdGVyU2VydmljZSxcbiAgKSB7fVxuXG4gIEBHZXQoJ2tleS1hbGlhc2VzJylcbiAgQFVzZUd1YXJkcyhPcHRpb25hbFNlc3Npb25BdXRoR3VhcmQpXG4gIGdldEtleUFsaWFzZXMoXG4gICAgQEhlYWRlcnMoJ3gta2FudGF0dWJlLXZpc2l0b3ItaWQnKSB2aXNpdG9ySWQ/OiBzdHJpbmcsXG4gICAgQFJlcSgpIHJlcXVlc3Q/OiBPcHRpb25hbEF1dGhlbnRpY2F0ZWRSZXF1ZXN0LFxuICApOiBZb3V0dWJlS2V5QWxpYXNlc1Jlc3BvbnNlIHtcbiAgICBwYXJzZU9wdGlvbmFsVmlzaXRvcklkKHZpc2l0b3JJZCk7XG4gICAgcmV0dXJuIHRoaXMueW91dHViZVNlcnZpY2UuZ2V0S2V5QWxpYXNlcyhyZXF1ZXN0Py5hdXRoVXNlcj8uaWQpO1xuICB9XG5cbiAgQFBvc3QoJ3BlcnNvbmFsLWtleXMnKVxuICBAVXNlR3VhcmRzKE9yaWdpbkd1YXJkLCBTZXNzaW9uQXV0aEd1YXJkKVxuICByZWdpc3RlclBlcnNvbmFsS2V5KFxuICAgIEBCb2R5KCkgcmVxdWVzdDogdW5rbm93bixcbiAgICBAUmVxKCkgaHR0cFJlcXVlc3Q6IFJlcXVlc3QsXG4gICAgQEN1cnJlbnRVc2VyKCkgdXNlcjogVXNlcixcbiAgKTogWW91dHViZVBlcnNvbmFsS2V5U3RhdHVzUmVzcG9uc2Uge1xuICAgIHRoaXMucmF0ZUxpbWl0ZXJTZXJ2aWNlLmNoZWNrUmVnaXN0cmF0aW9uKFxuICAgICAgdGhpcy5nZXRDbGllbnRJZChodHRwUmVxdWVzdCwgdXNlci5pZCksXG4gICAgKTtcbiAgICBjb25zdCBwZXJzb25hbEtleVJlcXVlc3QgPSBwYXJzZVlvdXR1YmVQZXJzb25hbEtleVJlcXVlc3QocmVxdWVzdCk7XG4gICAgcmV0dXJuIHRoaXMucGVyc29uYWxLZXlTZXJ2aWNlLnJlZ2lzdGVyKHVzZXIuaWQsIHBlcnNvbmFsS2V5UmVxdWVzdC5hcGlLZXkpO1xuICB9XG5cbiAgQEdldCgncGVyc29uYWwta2V5cy9zdGF0dXMnKVxuICBAVXNlR3VhcmRzKFNlc3Npb25BdXRoR3VhcmQpXG4gIGdldFBlcnNvbmFsS2V5U3RhdHVzKFxuICAgIEBDdXJyZW50VXNlcigpIHVzZXI6IFVzZXIsXG4gICk6IFlvdXR1YmVQZXJzb25hbEtleVN0YXR1c1Jlc3BvbnNlIHtcbiAgICByZXR1cm4gdGhpcy5wZXJzb25hbEtleVNlcnZpY2UuZ2V0U3RhdHVzKHVzZXIuaWQpO1xuICB9XG5cbiAgQERlbGV0ZSgncGVyc29uYWwta2V5cycpXG4gIEBVc2VHdWFyZHMoT3JpZ2luR3VhcmQsIFNlc3Npb25BdXRoR3VhcmQpXG4gIHJlbW92ZVBlcnNvbmFsS2V5KFxuICAgIEBDdXJyZW50VXNlcigpIHVzZXI6IFVzZXIsXG4gICk6IFlvdXR1YmVQZXJzb25hbEtleURlbGV0ZVJlc3BvbnNlIHtcbiAgICByZXR1cm4gdGhpcy5wZXJzb25hbEtleVNlcnZpY2UucmVtb3ZlKHVzZXIuaWQpO1xuICB9XG5cbiAgQEdldCgnc2VhcmNoJylcbiAgQFVzZUd1YXJkcyhPcHRpb25hbFNlc3Npb25BdXRoR3VhcmQpXG4gIHNlYXJjaChcbiAgICBAUXVlcnkoJ3EnKSBxdWVyeTogdW5rbm93bixcbiAgICBAUXVlcnkoJ2tleUFsaWFzJykga2V5QWxpYXM6IHVua25vd24sXG4gICAgQEhlYWRlcnMoJ3gta2FudGF0dWJlLXZpc2l0b3ItaWQnKSB2aXNpdG9ySWQ/OiBzdHJpbmcsXG4gICAgQFJlcSgpIGh0dHBSZXF1ZXN0PzogT3B0aW9uYWxBdXRoZW50aWNhdGVkUmVxdWVzdCxcbiAgKTogUHJvbWlzZTxZb3V0dWJlU2VhcmNoUmVzcG9uc2U+IHtcbiAgICBjb25zdCBzZWFyY2hSZXF1ZXN0ID0gcGFyc2VZb3V0dWJlU2VhcmNoUmVxdWVzdChxdWVyeSwga2V5QWxpYXMsIHZpc2l0b3JJZCk7XG4gICAgdGhpcy5yYXRlTGltaXRlclNlcnZpY2UuY2hlY2tTZWFyY2goXG4gICAgICB0aGlzLmdldENsaWVudElkKFxuICAgICAgICBodHRwUmVxdWVzdCxcbiAgICAgICAgc2VhcmNoUmVxdWVzdC52aXNpdG9ySWQgfHwgaHR0cFJlcXVlc3Q/LmF1dGhVc2VyPy5pZCxcbiAgICAgICksXG4gICAgKTtcbiAgICByZXR1cm4gdGhpcy55b3V0dWJlU2VydmljZS5zZWFyY2goXG4gICAgICBzZWFyY2hSZXF1ZXN0LnF1ZXJ5LFxuICAgICAgc2VhcmNoUmVxdWVzdC5rZXlBbGlhcyxcbiAgICAgIGh0dHBSZXF1ZXN0Py5hdXRoVXNlcj8uaWQsXG4gICAgKTtcbiAgfVxuXG4gIHByaXZhdGUgZ2V0Q2xpZW50SWQocmVxdWVzdD86IFJlcXVlc3QsIGlkZW50aXR5Pzogc3RyaW5nKTogc3RyaW5nIHtcbiAgICByZXR1cm4gYCR7cmVxdWVzdD8uaXAgfHwgJ3Vua25vd24nfToke1xuICAgICAgaWRlbnRpdHk/LnRyaW0oKSB8fCAnYW5vbnltb3VzJ1xuICAgIH1gO1xuICB9XG59XG4iXSwidmVyc2lvbiI6M30=

@@ -46,6 +46,7 @@ const scrypt = promisify(scryptCallback);
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private readonly recoveryRequestsByIp = new Map<string, number[]>();
+  private readonly lastUsedUpdates = new Map<string, Promise<unknown>>();
 
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
@@ -728,7 +729,7 @@ export class AuthService {
     return { token, returnPath: attempt.returnPath };
   }
 
-  async authenticate(rawToken?: string): Promise<User | null> {
+  async authenticate(rawToken?: string, includeAuthAccounts = false): Promise<User | null> {
     if (!rawToken) return null;
     const session = await this.sessions.findOne({
       where: {
@@ -736,13 +737,30 @@ export class AuthService {
         revokedAt: IsNull(),
         expiresAt: MoreThan(new Date()),
       },
-      relations: { user: true },
+      relations: includeAuthAccounts
+        ? { user: { authAccounts: true } }
+        : { user: true },
     });
     if (!session?.user || session.user.status !== UserStatus.ACTIVE || session.user.deletedAt) return null;
 
     if (Date.now() - session.lastUsedAt.getTime() > 5 * 60 * 1000) {
-      session.lastUsedAt = new Date();
-      await this.sessions.save(session);
+      // Do not make every authenticated request wait for this bookkeeping
+      // write. Also coalesce concurrent touches: the previous fire-and-
+      // forget implementation could enqueue one update per request while the
+      // session row was stale, consuming the pool during quota activity.
+      if (!this.lastUsedUpdates.has(session.id)) {
+        const update = Promise.resolve(
+          this.sessions.update({ id: session.id }, { lastUsedAt: new Date() }),
+        );
+        this.lastUsedUpdates.set(session.id, update);
+        void update
+          .catch(() => undefined)
+          .finally(() => {
+            if (this.lastUsedUpdates.get(session.id) === update) {
+              this.lastUsedUpdates.delete(session.id);
+            }
+          });
+      }
     }
     return session.user;
   }
@@ -824,13 +842,29 @@ export class AuthService {
     if (!user || user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException();
     }
+    return this.toCurrentUserResponse(user);
+  }
+
+  /**
+   * `/auth/me` already has a fresh active user from SessionAuthGuard. Keep
+   * the identity endpoint to one session+profile query instead of looking up
+   * the same user a second time in the controller.
+   */
+  getCurrentUserFromAuthenticatedUser(user: User): CurrentUserResponse {
+    if (user.status !== UserStatus.ACTIVE || user.deletedAt) {
+      throw new UnauthorizedException();
+    }
+    return this.toCurrentUserResponse(user);
+  }
+
+  private toCurrentUserResponse(user: User): CurrentUserResponse {
     return {
       id: user.id,
       displayName: user.displayName,
       email: user.email,
       emailVerified: user.emailVerified,
       avatarUrl: user.avatarUrl?.trim() || null,
-      providers: user.authAccounts.map((account) => account.provider),
+      providers: user.authAccounts?.map((account) => account.provider) ?? [],
       phoneNumber: user.phoneNumber,
       addressLine: user.addressLine,
       city: user.city,
@@ -944,8 +978,8 @@ export class AuthService {
       id: session.id,
       deviceLabel: this.deviceLabel(session.userAgent),
       browserLabel: this.browserLabel(session.userAgent),
-      lastActiveAt: session.lastUsedAt,
-      createdAt: session.createdAt,
+      lastActiveAt: session.lastUsedAt.toISOString(),
+      createdAt: session.createdAt.toISOString(),
       isCurrent: !!currentTokenHash && session.tokenHash === currentTokenHash,
     }));
   }

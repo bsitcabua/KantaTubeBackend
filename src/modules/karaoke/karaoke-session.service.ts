@@ -6,6 +6,7 @@ import {
   NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -27,6 +28,8 @@ import { KaraokeSessionResponse } from './karaoke-session.types';
 import { KaraokeQueueItem } from './entities/karaoke-queue-item.entity';
 import { KaraokeSessionPerformer } from './entities/karaoke-session-performer.entity';
 import { KaraokeRemoteHostSession } from './entities/karaoke-remote-host-session.entity';
+import { KaraokeUsageService } from './karaoke-usage.service';
+import { getApplicationDateKey } from '../../common/date-time/application-date-time';
 import {
   KaraokeGuestSessionClaimResponse,
   KaraokeQueueItemResponse,
@@ -50,9 +53,13 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     @InjectRepository(KaraokeQueueItem)
     private readonly queueItems: Repository<KaraokeQueueItem>,
     private readonly config: ConfigService,
+    @Optional()
+    private readonly usage?: KaraokeUsageService,
   ) {
     const configuredMaximum = Number(
-      this.config.get<string>('MAX_ACTIVE_SESSIONS'),
+      this.usage?.configuration.maxCurrentSessions ??
+        this.config.get<string>('MAX_CURRENT_SESSIONS') ??
+        this.config.get<string>('MAX_ACTIVE_SESSIONS'),
     );
     this.maxActiveSessions =
       Number.isInteger(configuredMaximum) && configuredMaximum > 0
@@ -100,8 +107,10 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
   ): Promise<KaraokeSessionResponse> {
     const alias = this.normalizeAlias(aliasInput);
     const clientId = this.normalizeClientId(clientIdInput);
+    await this.usage?.rolloverOwner(ownerId);
+    await this.usage?.assertCanStartNewSession(ownerId);
     const created =
-      await this.dataSource.transaction<KaraokeSessionResponse | null>(
+      await this.dataSource.transaction<KaraokeSession | null>(
         async (manager) => {
           const users = manager.getRepository(User);
           const sessions = manager.getRepository(KaraokeSession);
@@ -118,11 +127,14 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
           await this.expireStaleWithManager(manager, ownerId, undefined, now);
 
           const activeCount = await sessions.count({
-            where: {
-              ownerId,
-              status: KaraokeSessionStatus.ACTIVE,
-              leaseExpiresAt: MoreThan(now),
-            },
+            where: [
+              {
+                ownerId,
+                status: KaraokeSessionStatus.ACTIVE,
+                leaseExpiresAt: MoreThan(now),
+              },
+              { ownerId, status: KaraokeSessionStatus.LOCKED_QUOTA },
+            ],
           });
           if (activeCount >= this.maxActiveSessions) {
             // Returning instead of throwing commits the stale-session cleanup.
@@ -133,38 +145,51 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
             ownerId,
             alias,
             status: KaraokeSessionStatus.ACTIVE,
+            sessionDay: this.sessionDay(now),
             lastHeartbeatAt: now,
             leaseExpiresAt: this.nextLease(now),
             clientId,
             endedAt: null,
+            hasStartedSong: false,
+            firstSongStartedAt: null,
+            currentSongActive: false,
+            currentQueueItemId: null,
+            quotaExhaustionPending: false,
           });
-          return this.toResponse(await sessions.save(session));
+          const saved = await sessions.save(session);
+          return saved;
         },
       );
     if (!created) throw this.sessionLimitException();
-    return created;
+    return this.toResponseWithUsage(ownerId, created);
   }
 
   async listActive(ownerId: string): Promise<KaraokeSessionResponse[]> {
+    // A day boundary takes precedence over the normal lease cleanup.  If an
+    // old ACTIVE session is expired first, it can no longer be finalized as a
+    // previous-day session (and will miss the same history lifecycle as an
+    // old quota-locked session).
+    await this.usage?.rolloverOwner(ownerId);
     await this.expireStale(ownerId);
     const now = new Date();
     const sessions = await this.sessions.find({
-      where: {
-        ownerId,
-        status: KaraokeSessionStatus.ACTIVE,
-        leaseExpiresAt: MoreThan(now),
-      },
+      where: [
+        { ownerId, status: KaraokeSessionStatus.ACTIVE, leaseExpiresAt: MoreThan(now) },
+        { ownerId, status: KaraokeSessionStatus.LOCKED_QUOTA },
+      ],
       order: { createdAt: 'ASC' },
     });
-    return sessions.map((session) => this.toResponse(session));
+    return Promise.all(sessions.map((session) => this.toResponseWithUsage(ownerId, session)));
   }
 
   async listHistory(ownerId: string, limit = 25): Promise<KaraokeSessionResponse[]> {
+    await this.usage?.rolloverOwner(ownerId);
     await this.expireStale(ownerId);
     const sessions = await this.sessions.find({
       where: {
         ownerId,
         status: In([KaraokeSessionStatus.ENDED, KaraokeSessionStatus.EXPIRED]),
+        hasStartedSong: true,
       },
       order: { endedAt: 'DESC', createdAt: 'DESC' },
       take: Math.min(Math.max(Math.floor(limit), 1), 100),
@@ -173,10 +198,11 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
   }
 
   async getHistorySession(ownerId: string, id: string): Promise<KaraokeSessionResponse> {
+    await this.usage?.rolloverOwner(ownerId);
     await this.expireStale(ownerId);
     const session = await this.sessions.findOne({ where: { id, ownerId } });
     if (!session) throw new NotFoundException('Karaoke session not found.');
-    if (session.status === KaraokeSessionStatus.ACTIVE) {
+    if ([KaraokeSessionStatus.ACTIVE, KaraokeSessionStatus.LOCKED_QUOTA].includes(session.status)) {
       throw new ConflictException('The active karaoke session is not in session history.');
     }
     return this.toResponse(session);
@@ -209,6 +235,9 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     const replaceSessionId = replaceSessionIdInput === undefined || replaceSessionIdInput === null || replaceSessionIdInput === ''
       ? null
       : this.requiredUuid(replaceSessionIdInput, 'replaceSessionId');
+
+    await this.usage?.rolloverOwner(ownerId);
+    await this.usage?.assertCanStartNewSession(ownerId);
 
     return this.dataSource.transaction(async (manager) => {
       const users = manager.getRepository(User);
@@ -292,10 +321,16 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
         ownerId,
         alias,
         status: KaraokeSessionStatus.ACTIVE,
+        sessionDay: this.sessionDay(now),
         lastHeartbeatAt: now,
         leaseExpiresAt: this.nextLease(now),
         clientId,
         endedAt: null,
+        hasStartedSong: false,
+        firstSongStartedAt: null,
+        currentSongActive: false,
+        currentQueueItemId: null,
+        quotaExhaustionPending: false,
       });
       const saved = await sessions.save(claimed);
       const savedQueue = queue.length
@@ -310,7 +345,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       await hosts.save(host);
 
       return {
-        session: this.toResponse(saved),
+        session: await this.toResponseWithUsage(ownerId, saved),
         queue: savedQueue.map((item) => this.toQueueResponse(item)),
         performers: savedPerformers.sort((left, right) => left.position - right.position).map((performer) => performer.name),
         replacedSessionId,
@@ -323,6 +358,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     id: string,
     clientIdInput?: unknown,
   ): Promise<KaraokeSessionResponse> {
+    await this.usage?.rolloverOwner(ownerId);
     await this.expireStale(ownerId, id);
     const session = await this.findOwned(ownerId, id);
     // Historical sessions are read-only account data and are not tied to the
@@ -337,7 +373,79 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
         false,
       );
     }
-    return this.toResponse(session);
+    return this.toResponseWithUsage(ownerId, session);
+  }
+
+  /**
+   * Authorizes a read of score data without starting the daily rollover
+   * transaction. Scoreboard reads are side-effect free, and taking the
+   * rollover's pessimistic locks here can otherwise make a quota-locked
+   * leaderboard wait behind background usage accounting.
+   *
+   * Account > Session History uses the same leaderboard endpoint as the
+   * current-session modal. Historical sessions are read-only, but still have
+   * to belong to the authenticated owner.
+   */
+  async assertScoreReadAccess(
+    ownerId: string,
+    id: string,
+    clientIdInput?: unknown,
+  ): Promise<void> {
+    const session = await this.findOwned(ownerId, id);
+    const isCurrentSession = [
+      KaraokeSessionStatus.ACTIVE,
+      KaraokeSessionStatus.LOCKED_QUOTA,
+    ].includes(session.status);
+
+    if (isCurrentSession) {
+      this.assertCurrent(session);
+    }
+
+    if (session.status === KaraokeSessionStatus.ACTIVE) {
+      this.assertClientOwnership(
+        session,
+        this.normalizeClientId(clientIdInput),
+        false,
+        false,
+      );
+    }
+  }
+
+  async markSongStarted(
+    ownerId: string,
+    id: string,
+    queueItemId?: unknown,
+  ): Promise<KaraokeSessionResponse> {
+    const normalizedQueueItemId =
+      queueItemId === undefined || queueItemId === null || queueItemId === ''
+        ? undefined
+        : this.requiredUuid(queueItemId, 'queueItemId');
+    if (!this.usage) throw new ConflictException('Karaoke usage is unavailable.');
+    await this.usage.rolloverOwner(ownerId);
+    return this.usage.markSongStarted(ownerId, id, normalizedQueueItemId);
+  }
+
+  async markSongCompleted(
+    ownerId: string,
+    id: string,
+    queueItemIdInput?: unknown,
+  ): Promise<KaraokeSessionResponse> {
+    const queueItemId = this.requiredUuid(queueItemIdInput, 'queueItemId');
+    if (!this.usage) throw new ConflictException('Karaoke usage is unavailable.');
+    await this.usage.rolloverOwner(ownerId);
+    return this.usage.markSongCompleted(ownerId, id, queueItemId);
+  }
+
+  async finalizeSong(ownerId: string, id: string): Promise<KaraokeSessionResponse> {
+    if (!this.usage) throw new ConflictException('Karaoke usage is unavailable.');
+    await this.usage.rolloverOwner(ownerId);
+    return this.usage.finalizeSong(ownerId, id);
+  }
+
+  async terminateSong(ownerId: string, id: string): Promise<KaraokeSessionResponse> {
+    if (!this.usage) throw new ConflictException('Karaoke usage is unavailable.');
+    await this.usage.rolloverOwner(ownerId);
+    return this.usage.terminateSong(ownerId, id);
   }
 
   async getQueue(
@@ -345,15 +453,18 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     id: string,
     clientIdInput?: unknown,
   ): Promise<KaraokeQueueItemResponse[]> {
+    await this.usage?.rolloverOwner(ownerId);
     await this.expireStale(ownerId, id);
     const session = await this.findOwned(ownerId, id);
-    this.assertActive(session);
-    this.assertClientOwnership(
-      session,
-      this.normalizeClientId(clientIdInput),
-      false,
-      false,
-    );
+    this.assertCurrent(session);
+    if (session.status === KaraokeSessionStatus.ACTIVE) {
+      this.assertClientOwnership(
+        session,
+        this.normalizeClientId(clientIdInput),
+        false,
+        false,
+      );
+    }
     const items = await this.queueItems.find({
       where: { sessionId: id },
       order: { position: 'ASC' },
@@ -366,15 +477,18 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     id: string,
     clientIdInput?: unknown,
   ): Promise<string[]> {
+    await this.usage?.rolloverOwner(ownerId);
     await this.expireStale(ownerId, id);
     const session = await this.findOwned(ownerId, id);
-    this.assertActive(session);
-    this.assertClientOwnership(
-      session,
-      this.normalizeClientId(clientIdInput),
-      false,
-      false,
-    );
+    this.assertCurrent(session);
+    if (session.status === KaraokeSessionStatus.ACTIVE) {
+      this.assertClientOwnership(
+        session,
+        this.normalizeClientId(clientIdInput),
+        false,
+        false,
+      );
+    }
     const performers = await this.dataSource
       .getRepository(KaraokeSessionPerformer)
       .find({ where: { sessionId: id }, order: { position: 'ASC' } });
@@ -389,6 +503,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
   ): Promise<string[]> {
     const performers = this.normalizePerformers(input);
     const clientId = this.normalizeClientId(clientIdInput);
+    await this.usage?.rolloverOwner(ownerId);
     await this.expireStale(ownerId, id);
     return this.dataSource.transaction(async (manager) => {
       const sessions = manager.getRepository(KaraokeSession);
@@ -422,6 +537,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
   ): Promise<KaraokeQueueItemResponse[]> {
     const items = this.normalizeQueue(input);
     const clientId = this.normalizeClientId(clientIdInput);
+    await this.usage?.rolloverOwner(ownerId);
     await this.expireStale(ownerId, id);
     return this.dataSource.transaction(async (manager) => {
       const sessions = manager.getRepository(KaraokeSession);
@@ -453,6 +569,8 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     clientIdInput?: unknown,
   ): Promise<KaraokeSessionTransferResponse> {
     const clientId = this.normalizeClientId(clientIdInput);
+    await this.usage?.rolloverOwner(ownerId);
+    await this.usage?.assertCanStartNewSession(ownerId);
     await this.expireStale(ownerId, sourceId);
     return this.dataSource.transaction(async (manager) => {
       const users = manager.getRepository(User);
@@ -489,10 +607,16 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
           ownerId,
           alias: source!.alias,
           status: KaraokeSessionStatus.ACTIVE,
+          sessionDay: this.sessionDay(now),
           lastHeartbeatAt: now,
           leaseExpiresAt: this.nextLease(now),
           clientId,
           endedAt: null,
+          hasStartedSong: false,
+          firstSongStartedAt: null,
+          currentSongActive: false,
+          currentQueueItemId: null,
+          quotaExhaustionPending: false,
         }),
       );
       const sourceQueue = await queue.find({
@@ -545,8 +669,9 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     takeOver = false,
   ): Promise<KaraokeSessionResponse> {
     const clientId = this.normalizeClientId(clientIdInput);
+    await this.usage?.rolloverOwner(ownerId);
     const result = await this.dataSource.transaction<
-      KaraokeSessionResponse | KaraokeSessionStatus
+      KaraokeSession | KaraokeSessionStatus
     >(async (manager) => {
       const sessions = manager.getRepository(KaraokeSession);
       const queue = manager.getRepository(KaraokeQueueItem);
@@ -557,6 +682,9 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       if (!session) throw new NotFoundException('Karaoke session not found.');
 
       const now = new Date();
+      if (session.status === KaraokeSessionStatus.LOCKED_QUOTA) {
+        return session;
+      }
       if (
         session.status !== KaraokeSessionStatus.ACTIVE ||
         session.leaseExpiresAt.getTime() <= now.getTime()
@@ -578,10 +706,11 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       this.assertClientOwnership(session, clientId, takeOver);
       session.lastHeartbeatAt = now;
       session.leaseExpiresAt = this.nextLease(now);
-      return this.toResponse(await sessions.save(session));
+      return await sessions.save(session);
     });
     if (typeof result === 'string') throw this.notActiveException(result);
-    return result;
+    await this.usage?.heartbeatHost(ownerId, id);
+    return this.toResponseWithUsage(ownerId, result);
   }
 
   async end(
@@ -666,6 +795,21 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     return new Date(now.getTime() + this.leaseMs);
   }
 
+  private sessionDay(now: Date): string {
+    return this.usage?.getUsageDate(now) ?? getApplicationDateKey(now);
+  }
+
+  private async toResponseWithUsage(
+    ownerId: string,
+    session: KaraokeSession,
+  ): Promise<KaraokeSessionResponse> {
+    const response = this.toResponse(session);
+    if (this.usage) {
+      response.usage = await this.usage.resolveKaraokeAccess(ownerId, session);
+    }
+    return response;
+  }
+
   private async readClaimResponse(
     session: KaraokeSession,
     queueRepository: Repository<KaraokeQueueItem>,
@@ -695,6 +839,25 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     if (
       session.status !== KaraokeSessionStatus.ACTIVE ||
       session.leaseExpiresAt.getTime() <= Date.now()
+    ) {
+      throw this.notActiveException(
+        session.status === KaraokeSessionStatus.ACTIVE
+          ? KaraokeSessionStatus.EXPIRED
+          : session.status,
+      );
+    }
+  }
+
+  private assertCurrent(
+    session: KaraokeSession | null,
+  ): asserts session is KaraokeSession {
+    if (!session) throw new NotFoundException('Karaoke session not found.');
+    if (
+      ![KaraokeSessionStatus.ACTIVE, KaraokeSessionStatus.LOCKED_QUOTA].includes(
+        session.status,
+      ) ||
+      (session.status === KaraokeSessionStatus.ACTIVE &&
+        session.leaseExpiresAt.getTime() <= Date.now())
     ) {
       throw this.notActiveException(
         session.status === KaraokeSessionStatus.ACTIVE
@@ -921,11 +1084,11 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       id: session.id,
       alias: session.alias,
       status: session.status,
-      lastHeartbeatAt: session.lastHeartbeatAt,
-      leaseExpiresAt: session.leaseExpiresAt,
-      endedAt: session.endedAt,
-      createdAt: session.createdAt,
-      updatedAt: session.updatedAt,
+      lastHeartbeatAt: session.lastHeartbeatAt.toISOString(),
+      leaseExpiresAt: session.leaseExpiresAt.toISOString(),
+      endedAt: session.endedAt?.toISOString() ?? null,
+      createdAt: session.createdAt.toISOString(),
+      updatedAt: session.updatedAt.toISOString(),
     };
   }
 }

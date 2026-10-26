@@ -267,6 +267,44 @@ export class KaraokeSessionController {
     return result;
   }
 
+  @Post(':sessionId/song-started')
+  @UseGuards(OriginGuard)
+  songStarted(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+    @Body() body: { queueItemId?: unknown },
+  ) {
+    return this.sessions.markSongStarted(user.id, sessionId, body?.queueItemId);
+  }
+
+  @Post(':sessionId/song-finished')
+  @UseGuards(OriginGuard)
+  songFinished(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.sessions.finalizeSong(user.id, sessionId);
+  }
+
+  @Post(':sessionId/song-terminated')
+  @UseGuards(OriginGuard)
+  songTerminated(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.sessions.terminateSong(user.id, sessionId);
+  }
+
+  @Post(':sessionId/song-completed')
+  @UseGuards(OriginGuard)
+  songCompleted(
+    @CurrentUser() user: User,
+    @Param('sessionId') sessionId: string,
+    @Body() body: { queueItemId?: unknown },
+  ) {
+    return this.sessions.markSongCompleted(user.id, sessionId, body?.queueItemId);
+  }
+
   @Post(':sessionId/end')
   @UseGuards(OriginGuard)
   async end(

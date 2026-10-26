@@ -111,7 +111,7 @@ export class AuthController {
   @Get('me')
   @UseGuards(SessionAuthGuard)
   me(@CurrentUser() user: User) {
-    return this.auth.getCurrentUser(user.id);
+    return this.auth.getCurrentUserFromAuthenticatedUser(user);
   }
 
   @Get('sessions')

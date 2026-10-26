@@ -127,6 +127,12 @@ export class KaraokeScoreHistoryService {
     this.assertActive(session);
     const queueItem = await this.queueItems.findOne({ where: { id: performanceInstanceId, sessionId } });
     if (!queueItem) throw new BadRequestException('performanceInstanceId must identify the active queued song.');
+    if (!queueItem.scoreEligible) {
+      throw new ConflictException({
+        code: 'karaoke_score_not_eligible',
+        message: 'Score history is only available after a natural song completion.',
+      });
+    }
 
     const performance = this.history.create({
       sessionId,
@@ -141,7 +147,10 @@ export class KaraokeScoreHistoryService {
     });
 
     try {
-      return this.toResponse(await this.history.save(performance));
+      const saved = await this.history.save(performance);
+      queueItem.scoreEligible = false;
+      await this.queueItems.save(queueItem);
+      return this.toResponse(saved);
     } catch (error) {
       if (this.isDuplicateKeyError(error)) {
         const duplicate = await this.history.findOne({ where: { sessionId, performanceInstanceId } });
@@ -153,14 +162,14 @@ export class KaraokeScoreHistoryService {
 
   async list(ownerId: string, sessionIdInput: unknown, clientIdInput?: unknown): Promise<KaraokeScoreHistoryResponse[]> {
     const sessionId = this.requiredUuid(sessionIdInput, 'sessionId');
-    await this.sessions.get(ownerId, sessionId, this.optionalUuid(clientIdInput, 'clientId'));
+    await this.sessions.assertScoreReadAccess(ownerId, sessionId, this.optionalUuid(clientIdInput, 'clientId'));
     const rows = await this.history.find({ where: { sessionId }, order: { completedAt: 'DESC', id: 'DESC' }, take: HISTORY_QUERY_LIMIT });
     return rows.map((row) => this.toResponse(row));
   }
 
   async leaderboard(ownerId: string, sessionIdInput: unknown, clientIdInput?: unknown): Promise<KaraokeScoreLeaderboardResponse> {
     const sessionId = this.requiredUuid(sessionIdInput, 'sessionId');
-    await this.sessions.get(ownerId, sessionId, this.optionalUuid(clientIdInput, 'clientId'));
+    await this.sessions.assertScoreReadAccess(ownerId, sessionId, this.optionalUuid(clientIdInput, 'clientId'));
     const rows = await this.history.find({ where: { sessionId }, order: { completedAt: 'ASC', id: 'ASC' }, take: HISTORY_QUERY_LIMIT });
     return buildKaraokeLeaderboard(rows.map((row) => ({ performerName: row.performerNameSnapshot, score: row.score, completedAt: row.completedAt })));
   }
@@ -204,11 +213,14 @@ export class KaraokeScoreHistoryService {
   }
 
   private toResponse(row: KaraokeScoreHistory): KaraokeScoreHistoryResponse {
-    return { id: row.id, performanceInstanceId: row.performanceInstanceId, performerName: row.performerNameSnapshot, songTitle: row.songTitleSnapshot, artist: row.artistSnapshot, youtubeVideoId: row.youtubeVideoId, score: row.score, scoreMessage: row.scoreMessage, completedAt: row.completedAt };
+    return { id: row.id, performanceInstanceId: row.performanceInstanceId, performerName: row.performerNameSnapshot, songTitle: row.songTitleSnapshot, artist: row.artistSnapshot, youtubeVideoId: row.youtubeVideoId, score: row.score, scoreMessage: row.scoreMessage, completedAt: row.completedAt.toISOString() };
   }
 
-  private assertActive(session: { status: KaraokeSessionStatus; leaseExpiresAt: Date }): void {
-    if (session.status !== KaraokeSessionStatus.ACTIVE || session.leaseExpiresAt.getTime() <= Date.now()) {
+  private assertActive(session: { status: KaraokeSessionStatus; leaseExpiresAt: Date | string }): void {
+    const leaseExpiresAt = session.leaseExpiresAt instanceof Date
+      ? session.leaseExpiresAt.getTime()
+      : Date.parse(session.leaseExpiresAt);
+    if (session.status !== KaraokeSessionStatus.ACTIVE || leaseExpiresAt <= Date.now()) {
       throw new ConflictException({ code: 'karaoke_session_not_active', message: 'This karaoke session is no longer active.', status: session.status });
     }
   }

@@ -8,6 +8,9 @@ export function getDatabaseOptions(): DataSourceOptions {
     username: process.env.DB_USERNAME || 'root',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'kantatube',
+    // DATETIME columns are persisted as UTC instants by the application.
+    // Business-day calculations never depend on the database/server local TZ.
+    timezone: 'Z',
     ssl:
       process.env.DB_SSL === 'false'
         ? undefined

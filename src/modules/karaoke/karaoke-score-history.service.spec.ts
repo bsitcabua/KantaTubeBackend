@@ -19,8 +19,8 @@ describe('KaraokeScoreHistoryService', () => {
   };
 
   type HistoryMock = { findOne: jest.Mock; create: jest.Mock; save: jest.Mock; find: jest.Mock };
-  type QueueMock = { findOne: jest.Mock };
-  type SessionsMock = { get: jest.Mock };
+  type QueueMock = { findOne: jest.Mock; save: jest.Mock };
+  type SessionsMock = { get: jest.Mock; assertScoreReadAccess: jest.Mock };
 
   function createService(overrides: {
     history?: Partial<HistoryMock>;
@@ -41,11 +41,14 @@ describe('KaraokeScoreHistoryService', () => {
         performer: 'ELVIN',
         videoId: 'dQw4w9WgXcQ',
         title: 'Bahay Kubo',
+        scoreEligible: true,
       }),
+      save: jest.fn(async (value) => value),
       ...overrides.queue,
     } as QueueMock;
     const sessions = {
       get: jest.fn().mockResolvedValue(activeSession),
+      assertScoreReadAccess: jest.fn().mockResolvedValue(undefined),
       ...overrides.sessions,
     } as SessionsMock;
     return {
@@ -80,6 +83,32 @@ describe('KaraokeScoreHistoryService', () => {
       score: 95,
     }));
     expect(result.performerName).toBe('ELVIN');
+    expect(queue.save).toHaveBeenCalledWith(expect.objectContaining({ scoreEligible: false }));
+  });
+
+  it('rejects score history for a started song that was manually skipped', async () => {
+    const { service, history } = createService({
+      queue: {
+        findOne: jest.fn().mockResolvedValue({
+          id: performanceInstanceId,
+          sessionId,
+          performer: 'ELVIN',
+          videoId: 'dQw4w9WgXcQ',
+          title: 'Bahay Kubo',
+          scoreEligible: false,
+        }),
+      },
+    });
+
+    await expect(service.create(ownerId, sessionId, {
+      performanceInstanceId,
+      score: 95,
+      scoreMessage: 'Great',
+      clientId,
+    })).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'karaoke_score_not_eligible' }),
+    });
+    expect(history.save).not.toHaveBeenCalled();
   });
 
   it('does not write for an unauthorized session', async () => {
@@ -134,12 +163,22 @@ describe('KaraokeScoreHistoryService', () => {
   });
 
   it('keeps history session-scoped', async () => {
-    const { service, history } = createService({
+    const { service, history, sessions } = createService({
       history: { find: jest.fn().mockResolvedValue([]) },
     });
 
     await service.list(ownerId, sessionId, clientId);
+    expect(sessions.assertScoreReadAccess).toHaveBeenCalledWith(ownerId, sessionId, clientId);
     expect(history.find).toHaveBeenCalledWith(expect.objectContaining({ where: { sessionId } }));
+  });
+
+  it('uses the read-only session authorization path for leaderboard data', async () => {
+    const { service, sessions } = createService();
+
+    await service.leaderboard(ownerId, sessionId, clientId);
+
+    expect(sessions.assertScoreReadAccess).toHaveBeenCalledWith(ownerId, sessionId, clientId);
+    expect(sessions.get).not.toHaveBeenCalled();
   });
 });
 

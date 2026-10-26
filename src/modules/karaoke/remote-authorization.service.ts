@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -21,6 +22,7 @@ import {
   KaraokeRemoteGrantStatus,
 } from './entities/karaoke-remote-grant.entity';
 import { KaraokeRemoteHostSession } from './entities/karaoke-remote-host-session.entity';
+import { KaraokeUsageService } from './karaoke-usage.service';
 
 export type RemoteSessionKind = 'karaoke' | 'guest';
 
@@ -75,6 +77,8 @@ export class RemoteAuthorizationService {
     @InjectRepository(KaraokeRemoteHostSession)
     private readonly hostSessions: Repository<KaraokeRemoteHostSession>,
     private readonly config: ConfigService,
+    @Optional()
+    private readonly usage?: KaraokeUsageService,
   ) {
     const pairingSeconds = this.readNumber(
       'REMOTE_PAIRING_TOKEN_SECONDS',
@@ -492,6 +496,10 @@ export class RemoteAuthorizationService {
     sessionId: string,
     clientId?: unknown,
   ): Promise<KaraokeSession> {
+    // Socket authorization is a current-session resolution path too. Never
+    // let a stored ticket reconnect a prior-day host before its session has
+    // been finalized by the authoritative daily rollover.
+    await this.usage?.rolloverOwner(ownerId);
     const session = await this.sessions.findOne({
       where: { id: sessionId, ownerId },
     });
@@ -730,8 +738,12 @@ export class RemoteAuthorizationService {
 
   private assertActiveSession(session: KaraokeSession): KaraokeSession {
     if (
-      session.status !== KaraokeSessionStatus.ACTIVE ||
-      session.leaseExpiresAt.getTime() <= Date.now()
+      ![
+        KaraokeSessionStatus.ACTIVE,
+        KaraokeSessionStatus.LOCKED_QUOTA,
+      ].includes(session.status) ||
+      (session.status === KaraokeSessionStatus.ACTIVE &&
+        session.leaseExpiresAt.getTime() <= Date.now())
     ) {
       throw this.remoteError(
         'SESSION_EXPIRED',

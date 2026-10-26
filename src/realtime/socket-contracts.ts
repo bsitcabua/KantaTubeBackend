@@ -80,6 +80,7 @@ export type SocketErrorCode =
   | 'RATE_LIMITED'
   | 'MAIN_CLIENT_OFFLINE'
   | 'QUEUE_FULL'
+  | 'QUOTA_EXHAUSTED'
   | 'DUPLICATE_MAIN_CLIENT';
 
 export interface SocketErrorPayload {

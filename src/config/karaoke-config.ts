@@ -1,4 +1,24 @@
+import { APPLICATION_TIME_ZONE } from '../common/date-time/application-date-time';
+
 export const DEFAULT_MAX_KARAOKE_QUEUE_SIZE = 15;
+
+export interface KaraokeUsageConfig {
+  freeDailyKaraokeMinutes: number;
+  resetTimezone: string;
+  usageDisconnectGraceSeconds: number;
+  allowCurrentSongToFinishAfterLimit: boolean;
+  maxCurrentSessions: number;
+  usageHeartbeatGapCapSeconds: number;
+}
+
+export const DEFAULT_KARAOKE_USAGE_CONFIG: KaraokeUsageConfig = {
+  freeDailyKaraokeMinutes: 2,
+  resetTimezone: APPLICATION_TIME_ZONE,
+  usageDisconnectGraceSeconds: 60,
+  allowCurrentSongToFinishAfterLimit: true,
+  maxCurrentSessions: 1,
+  usageHeartbeatGapCapSeconds: 60,
+};
 
 export interface BuyMeACoffeeConfig {
   autoShow: boolean;
@@ -98,6 +118,46 @@ export function parseBuyMeACoffeeConfig(values: {
     manualOpenResetsCooldown: parseBoolean(
       values.manualOpenResetsCooldown,
       DEFAULT_BUY_ME_A_COFFEE_CONFIG.manualOpenResetsCooldown,
+    ),
+  };
+}
+
+export function parseKaraokeUsageConfig(values: {
+  freeDailyKaraokeMinutes?: unknown;
+  resetTimezone?: unknown;
+  usageDisconnectGraceSeconds?: unknown;
+  allowCurrentSongToFinishAfterLimit?: unknown;
+  maxCurrentSessions?: unknown;
+  usageHeartbeatGapCapSeconds?: unknown;
+}): KaraokeUsageConfig {
+  return {
+    freeDailyKaraokeMinutes: parseInteger(
+      values.freeDailyKaraokeMinutes,
+      DEFAULT_KARAOKE_USAGE_CONFIG.freeDailyKaraokeMinutes,
+      1,
+    ),
+    // The business calendar is deliberately not environment-configurable.
+    // Keep accepting the legacy input so existing bootstrap code remains
+    // compatible, but always use the canonical application timezone.
+    resetTimezone: APPLICATION_TIME_ZONE,
+    usageDisconnectGraceSeconds: parseInteger(
+      values.usageDisconnectGraceSeconds,
+      DEFAULT_KARAOKE_USAGE_CONFIG.usageDisconnectGraceSeconds,
+      0,
+    ),
+    allowCurrentSongToFinishAfterLimit: parseBoolean(
+      values.allowCurrentSongToFinishAfterLimit,
+      DEFAULT_KARAOKE_USAGE_CONFIG.allowCurrentSongToFinishAfterLimit,
+    ),
+    maxCurrentSessions: parseInteger(
+      values.maxCurrentSessions,
+      DEFAULT_KARAOKE_USAGE_CONFIG.maxCurrentSessions,
+      1,
+    ),
+    usageHeartbeatGapCapSeconds: parseInteger(
+      values.usageHeartbeatGapCapSeconds,
+      DEFAULT_KARAOKE_USAGE_CONFIG.usageHeartbeatGapCapSeconds,
+      1,
     ),
   };
 }
