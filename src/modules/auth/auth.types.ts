@@ -1,4 +1,5 @@
 import { AuthProvider } from './entities/auth-account.entity';
+import { AppearanceMode } from '../users/appearance-mode';
 
 export interface ProviderProfile {
   provider: AuthProvider;
@@ -22,6 +23,7 @@ export interface CurrentUserResponse {
   province?: string | null;
   postalCode?: string | null;
   country?: string | null;
+  appearanceMode: AppearanceMode;
 }
 
 export interface AuthSessionSummaryResponse {

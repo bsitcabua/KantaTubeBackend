@@ -14,6 +14,10 @@ export interface KaraokeSessionResponse {
   endedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Persisted queue size exposed to account/session summary views. */
+  queueCount?: number;
+  /** In-memory authoritative Host presence, when the session is active. */
+  hostPresence?: 'live' | 'none';
   usage?: KaraokeUsageSummaryResponse;
 }
 

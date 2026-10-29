@@ -74,7 +74,7 @@ describe('KaraokeSessionController', () => {
     controller.listPerformances(user, sessionId, clientId);
     controller.leaderboard(user, sessionId, clientId);
 
-    expect(service.create).toHaveBeenCalledWith(user.id, 'Living Room', clientId);
+    expect(service.create).toHaveBeenCalledWith(user.id, 'Living Room', clientId, false);
     expect(service.listActive).toHaveBeenCalledWith(user.id);
     expect(service.get).toHaveBeenCalledWith(user.id, sessionId, clientId);
     expect(service.heartbeat).toHaveBeenCalledWith(user.id, sessionId, clientId, false);

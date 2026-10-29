@@ -40,9 +40,21 @@ export class KaraokeSessionController {
   @UseGuards(OriginGuard)
   create(
     @CurrentUser() user: User,
-    @Body() body: { alias?: unknown; clientId?: unknown },
+    @Body() body: { alias?: unknown; clientId?: unknown; resumeExisting?: unknown },
   ) {
-    return this.sessions.create(user.id, body?.alias, body?.clientId);
+    const resumeExistingOption = body?.resumeExisting;
+    if (
+      resumeExistingOption !== undefined &&
+      typeof resumeExistingOption !== 'boolean'
+    ) {
+      throw new BadRequestException('resumeExisting must be a boolean.');
+    }
+    return this.sessions.create(
+      user.id,
+      body?.alias,
+      body?.clientId,
+      resumeExistingOption === true,
+    );
   }
 
   @Get('active')
@@ -215,21 +227,10 @@ export class KaraokeSessionController {
   transfer(
     @CurrentUser() user: User,
     @Param('sessionId') sessionId: string,
-    @Body() body: { includePerformers?: unknown; clientId?: unknown },
+    @Body() body: { clientId?: unknown },
   ) {
-    const includePerformersOption = body?.includePerformers;
-    if (
-      includePerformersOption !== undefined &&
-      typeof includePerformersOption !== 'boolean'
-    ) {
-      throw new BadRequestException('includePerformers must be a boolean.');
-    }
-    const includePerformers =
-      includePerformersOption === undefined
-        ? true
-        : Boolean(includePerformersOption);
     return this.sessions
-      .transfer(user.id, sessionId, includePerformers, body?.clientId)
+      .transfer(user.id, sessionId, body?.clientId)
       .then(async (result) => {
         await this.remoteAuthorization?.invalidateSession(sessionId);
         return result;

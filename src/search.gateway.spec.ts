@@ -113,6 +113,59 @@ describe('SearchGateway', () => {
     expect(main.handshake.auth).not.toHaveProperty('role');
   });
 
+  it('rejects a simultaneous second main tab without disconnecting the current Host', async () => {
+    const sessions = {
+      claimHost: jest.fn().mockResolvedValue({ id: sessionId }),
+    };
+    const gatedGateway = new SearchGateway(
+      auth as never,
+      authorization as never,
+      rateLimiter as never,
+      undefined,
+      undefined,
+      sessions as never,
+    );
+    gatedGateway.server = {
+      to: jest.fn(() => ({ emit: roomEmit })),
+      sockets: { sockets },
+    } as unknown as Server;
+    const first = createClient(
+      { sessionId, clientId: '123e4567-e89b-42d3-a456-426614174003' },
+      'first-main-socket',
+    );
+    const second = createClient(
+      { sessionId, clientId: '123e4567-e89b-42d3-a456-426614174004' },
+      'second-main-socket',
+    );
+
+    await Promise.all([
+      gatedGateway.handleConnection(first),
+      gatedGateway.handleConnection(second),
+    ]);
+
+    expect(sessions.claimHost).toHaveBeenCalledTimes(2);
+    expect(first.emit).toHaveBeenCalledWith('mainRegistered', expect.anything());
+    expect(first.disconnect).not.toHaveBeenCalled();
+    expect(second.emit).toHaveBeenCalledWith(
+      'socketError',
+      expect.objectContaining({ code: 'DUPLICATE_MAIN_CLIENT' }),
+    );
+    expect(second.disconnect).toHaveBeenCalledWith(true);
+
+    (gatedGateway as unknown as {
+      handleSessionInvalidated: (id: string, kind: 'karaoke') => void;
+    }).handleSessionInvalidated(sessionId, 'karaoke');
+    await expect(
+      gatedGateway.videoStatus(first, {
+        event: 'videoStatus',
+        data: { videoStatus: 'playing' },
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'REMOTE_NOT_AUTHORIZED' },
+    });
+  });
+
   it('authenticates a cross-origin main client with a short-lived socket ticket', async () => {
     const main = createClient({ sessionId, socketTicket: 'v1.ticket.signature' }, 'ticket-main-socket');
     (main.handshake.headers as { cookie?: string }).cookie = undefined;

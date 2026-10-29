@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthProvider } from './entities/auth-account.entity';
+import { AppearanceMode } from '../users/appearance-mode';
 import { UserStatus } from '../users/entities/user.entity';
 import { PasswordOtpPurpose } from './entities/password-otp.entity';
 
@@ -210,6 +211,7 @@ describe('AuthService', () => {
       province: null,
       postalCode: null,
       country: null,
+      appearanceMode: AppearanceMode.SYSTEM,
     });
     expect(context.users.findOne).not.toHaveBeenCalled();
   });
@@ -563,5 +565,36 @@ describe('AuthService', () => {
     await expect(context.service.revokeSessionById('user-1', 'session-2', 'current-token'))
       .rejects.toThrow('current-device');
     expect(context.sessions.update).not.toHaveBeenCalled();
+  });
+
+  it.each([AppearanceMode.LIGHT, AppearanceMode.DARK, AppearanceMode.SYSTEM])(
+    'persists the valid appearance mode %s and returns it in the current-user response',
+    async (appearanceMode) => {
+      const context = setup();
+      const user = {
+        id: 'user-1',
+        status: UserStatus.ACTIVE,
+        deletedAt: null,
+        appearanceMode: AppearanceMode.SYSTEM,
+        authAccounts: [],
+      };
+      context.users.findOne.mockResolvedValue(user);
+
+      const result = await context.service.updateAppearanceMode('user-1', appearanceMode);
+
+      expect(user.appearanceMode).toBe(appearanceMode);
+      expect(context.users.save).toHaveBeenCalledWith(user);
+      expect(result).toEqual(expect.objectContaining({ appearanceMode }));
+    },
+  );
+
+  it('rejects unsupported appearance modes before touching the database', async () => {
+    const context = setup();
+
+    await expect(context.service.updateAppearanceMode('user-1', 'BLUE')).rejects.toThrow(
+      'appearanceMode must be LIGHT, DARK, or SYSTEM',
+    );
+    expect(context.users.findOne).not.toHaveBeenCalled();
+    expect(context.users.save).not.toHaveBeenCalled();
   });
 });

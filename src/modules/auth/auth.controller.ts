@@ -152,6 +152,15 @@ export class AuthController {
     return this.auth.updateProfile(user.id, body);
   }
 
+  @Patch('preferences')
+  @UseGuards(OriginGuard, SessionAuthGuard)
+  updatePreferences(
+    @CurrentUser() user: User,
+    @Body() body: { appearanceMode?: unknown },
+  ) {
+    return this.auth.updateAppearanceMode(user.id, body?.appearanceMode);
+  }
+
   @Patch('profile/photo')
   @UseGuards(OriginGuard, SessionAuthGuard)
   @UseInterceptors(

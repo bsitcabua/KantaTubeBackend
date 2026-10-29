@@ -11,6 +11,7 @@ import {
 import { AuthAccount } from '../../auth/entities/auth-account.entity';
 import { AuthSession } from '../../auth/entities/auth-session.entity';
 import { KaraokeSession } from '../../karaoke/entities/karaoke-session.entity';
+import { AppearanceMode } from '../appearance-mode';
 
 export enum UserStatus {
   ACTIVE = 'active',
@@ -56,6 +57,9 @@ export class User {
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   country: string | null;
+
+  @Column({ type: 'enum', enum: AppearanceMode, default: AppearanceMode.SYSTEM })
+  appearanceMode: AppearanceMode;
 
   @Column({ type: 'enum', enum: UserStatus, default: UserStatus.ACTIVE })
   status: UserStatus;

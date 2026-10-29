@@ -13,6 +13,7 @@ import {
   RemoteSessionKind,
 } from './modules/karaoke/remote-authorization.service';
 import { KaraokeUsageService } from './modules/karaoke/karaoke-usage.service';
+import { KaraokeSessionService } from './modules/karaoke/karaoke-session.service';
 import {
   KaraokeLibraryChange,
   KaraokeLibraryEventsService,
@@ -89,6 +90,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(SearchGateway.name);
   private readonly mainSocketBySession = new Map<string, string>();
+  private readonly mainConnectionLocks = new Map<string, Promise<void>>();
   private readonly remoteSearchRoutes = new Map<string, RemoteSearchRoute>();
   private readonly remoteReserveRoutes = new Map<string, RemoteReserveRoute>();
   private readonly remoteAccessRequestsInFlight = new Set<string>();
@@ -106,6 +108,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @Optional() private readonly rateLimiter?: RateLimiterService,
     @Optional() private readonly libraryEvents?: KaraokeLibraryEventsService,
     @Optional() private readonly usage?: KaraokeUsageService,
+    @Optional() private readonly sessions?: KaraokeSessionService,
   ) {
     this.removeInvalidationListener =
       this.remoteAuthorization?.onSessionInvalidated?.(
@@ -228,6 +231,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.removeRemoteReserveRoutesForSession(sessionId, sessionKind);
     this.emitActiveRemoteCount(sessionId, sessionKind);
     main?.emit('remoteSessionEnded', { sessionId });
+    if (mainId) void this.usage?.disconnectHost(sessionId, mainId);
     this.mainSocketBySession.delete(this.sessionKey(sessionId, sessionKind));
     this.server
       ?.to(this.room(sessionId, sessionKind))
@@ -634,32 +638,35 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       sessionKind,
       ownerId: user.id,
     };
-    const existingId = this.mainSocketBySession.get(this.sessionKey(context));
-    if (existingId && existingId !== client.id) {
-      const existing = this.server.sockets.sockets.get(existingId);
-      existing?.emit('socketError', {
-        code: 'DUPLICATE_MAIN_CLIENT',
-        message: 'This karaoke session is active in another main tab.',
-      });
-      existing?.disconnect(true);
-    }
-    client.data.kantaTube = context;
-    this.mainSocketBySession.set(this.sessionKey(context), client.id);
-    await this.usage?.connectHost(user.id, sessionId, client.id);
-    await client.join(this.room(sessionId, sessionKind));
-    if (context.ownerId) await client.join(this.accountRoom(context.ownerId));
-    this.server
-      .to(this.room(sessionId, sessionKind))
-      .emit('mainClientStatus', { status: 'online' });
-    this.notifyPendingRemotes(sessionId, sessionKind, client);
-    client.emit('mainRegistered', {
-      sessionId,
-      sessionKind,
+    await this.withMainConnectionLock(this.sessionKey(context), async () => {
+      // A transport connection is not Host authority. The durable client
+      // claim must succeed before this socket can publish or control playback.
+      await this.sessions?.claimHost(user.id, sessionId, clientId);
+      const key = this.sessionKey(context);
+      const existingId = this.mainSocketBySession.get(key);
+      if (existingId && existingId !== client.id) {
+        // Only the explicit transfer endpoint may revoke the current Host.
+        // A second tab must not replace it merely by connecting a socket.
+        throw this.socketException(
+          'DUPLICATE_MAIN_CLIENT',
+          'This karaoke session is active in another main tab.',
+        );
+      }
+      client.data.kantaTube = context;
+      this.mainSocketBySession.set(key, client.id);
+      await this.usage?.connectHost(user.id, sessionId, client.id);
+      await client.join(this.room(sessionId, sessionKind));
+      if (context.ownerId) await client.join(this.accountRoom(context.ownerId));
+      this.server
+        .to(this.room(sessionId, sessionKind))
+        .emit('mainClientStatus', { status: 'online' });
+      this.notifyPendingRemotes(sessionId, sessionKind, client);
+      client.emit('mainRegistered', { sessionId, sessionKind });
+      this.emitActiveRemoteCount(sessionId, sessionKind);
+      this.logger.log(
+        `Authenticated main socket registered for session ${this.redactSessionId(sessionId)} using ${socketTicket ? 'ticket' : 'cookie'} auth`,
+      );
     });
-    this.emitActiveRemoteCount(sessionId, sessionKind);
-    this.logger.log(
-      `Authenticated main socket registered for session ${this.redactSessionId(sessionId)} using ${socketTicket ? 'ticket' : 'cookie'} auth`,
-    );
   }
 
   private async connectGuestMain(
@@ -673,28 +680,46 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
       sessionId,
       sessionKind: 'guest',
     };
-    const existingId = this.mainSocketBySession.get(this.sessionKey(context));
-    if (existingId && existingId !== client.id) {
-      const existing = this.server.sockets.sockets.get(existingId);
-      existing?.emit('socketError', {
-        code: 'DUPLICATE_MAIN_CLIENT',
-        message:
+    await this.withMainConnectionLock(this.sessionKey(context), async () => {
+      const key = this.sessionKey(context);
+      const existingId = this.mainSocketBySession.get(key);
+      if (existingId && existingId !== client.id) {
+        throw this.socketException(
+          'DUPLICATE_MAIN_CLIENT',
           'This anonymous karaoke session is active in another main tab.',
-      });
-      existing?.disconnect(true);
-    }
-    client.data.kantaTube = context;
-    this.mainSocketBySession.set(this.sessionKey(context), client.id);
-    await client.join(this.room(sessionId, 'guest'));
-    this.server
-      .to(this.room(sessionId, 'guest'))
-      .emit('mainClientStatus', { status: 'online' });
-    this.notifyPendingRemotes(sessionId, 'guest', client);
-    client.emit('mainRegistered', {
-      sessionId,
-      sessionKind: 'guest',
+        );
+      }
+      client.data.kantaTube = context;
+      this.mainSocketBySession.set(key, client.id);
+      await client.join(this.room(sessionId, 'guest'));
+      this.server
+        .to(this.room(sessionId, 'guest'))
+        .emit('mainClientStatus', { status: 'online' });
+      this.notifyPendingRemotes(sessionId, 'guest', client);
+      client.emit('mainRegistered', { sessionId, sessionKind: 'guest' });
+      this.emitActiveRemoteCount(sessionId, 'guest');
     });
-    this.emitActiveRemoteCount(sessionId, 'guest');
+  }
+
+  private async withMainConnectionLock<T>(
+    key: string,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.mainConnectionLocks.get(key);
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.mainConnectionLocks.set(key, current);
+    await previous?.catch(() => undefined);
+    try {
+      return await work();
+    } finally {
+      release();
+      if (this.mainConnectionLocks.get(key) === current) {
+        this.mainConnectionLocks.delete(key);
+      }
+    }
   }
 
   private async connectPendingRemote(
@@ -886,8 +911,8 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     eventName: string,
     payload: SocketEnvelope,
   ): Promise<SocketAck> {
-    const context = this.context(client);
-    if (!context || context.kind !== 'main')
+    const context = this.requireMain(client);
+    if (!context)
       return Promise.resolve(
         this.fail(
           client,
@@ -1146,7 +1171,10 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private requireMain(client: Socket): MainContext | null {
     const context = this.context(client);
-    return context?.kind === 'main' ? context : null;
+    if (context?.kind !== 'main') return null;
+    return this.mainSocketBySession.get(this.sessionKey(context)) === client.id
+      ? context
+      : null;
   }
 
   private findRemoteByGrant(grantId: string): Socket | undefined {
@@ -1555,7 +1583,9 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const record = this.isRecord(response) ? response : {};
     const rawCode = record.code === 'karaoke_quota_exhausted'
       ? 'QUOTA_EXHAUSTED'
-      : record.code;
+      : record.code === 'karaoke_session_taken_over'
+        ? 'DUPLICATE_MAIN_CLIENT'
+        : record.code;
     const code = this.isSocketErrorCode(rawCode)
       ? rawCode
       : record.statusCode === 400

@@ -57,7 +57,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     private readonly usage?: KaraokeUsageService,
   ) {
     const configuredMaximum = Number(
-      this.usage?.configuration.maxCurrentSessions ??
+      this.usage?.configuration?.maxCurrentSessions ??
         this.config.get<string>('MAX_CURRENT_SESSIONS') ??
         this.config.get<string>('MAX_ACTIVE_SESSIONS'),
     );
@@ -104,6 +104,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     ownerId: string,
     aliasInput: unknown,
     clientIdInput?: unknown,
+    resumeExisting = false,
   ): Promise<KaraokeSessionResponse> {
     const alias = this.normalizeAlias(aliasInput);
     const clientId = this.normalizeClientId(clientIdInput);
@@ -126,7 +127,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
           const now = new Date();
           await this.expireStaleWithManager(manager, ownerId, undefined, now);
 
-          const activeCount = await sessions.count({
+          const currentSessions = await sessions.find({
             where: [
               {
                 ownerId,
@@ -135,10 +136,37 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
               },
               { ownerId, status: KaraokeSessionStatus.LOCKED_QUOTA },
             ],
+            order: { createdAt: 'ASC' },
           });
-          if (activeCount >= this.maxActiveSessions) {
-            // Returning instead of throwing commits the stale-session cleanup.
-            return null;
+          if (currentSessions.length > 0) {
+            const canonical = await this.selectCanonicalCurrentSession(
+              manager,
+              currentSessions,
+            );
+            await this.finalizeDuplicateCurrentSessions(
+              manager,
+              currentSessions,
+              canonical,
+              now,
+            );
+
+            if (this.hasOccupiedHostSlot(canonical.id)) {
+              // A live Host is never implicitly replaced by a bootstrap or a
+              // named-session request. The caller must use the explicit
+              // transfer flow to move authority.
+              return null;
+            }
+
+            // The bootstrap request may come from a new tab/device. Reuse and
+            // claim the durable current session instead of creating a second
+            // current row, even when the caller did not send resumeExisting.
+            if (canonical.status === KaraokeSessionStatus.ACTIVE) {
+              this.assertClientOwnership(canonical, clientId, true);
+              canonical.lastHeartbeatAt = now;
+              canonical.leaseExpiresAt = this.nextLease(now);
+              return sessions.save(canonical);
+            }
+            return canonical;
           }
 
           const session = sessions.create({
@@ -179,7 +207,15 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       ],
       order: { createdAt: 'ASC' },
     });
-    return Promise.all(sessions.map((session) => this.toResponseWithUsage(ownerId, session)));
+    const reconciledSessions =
+      sessions.length > 1
+        ? await this.reconcileCurrentSessions(ownerId)
+        : sessions;
+    return Promise.all(
+      this.sessionsForBootstrap(reconciledSessions).map((session) =>
+        this.toResponseWithUsage(ownerId, session, true),
+      ),
+    );
   }
 
   async listHistory(ownerId: string, limit = 25): Promise<KaraokeSessionResponse[]> {
@@ -280,13 +316,16 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
 
       const now = new Date();
       await this.expireStaleWithManager(manager, ownerId, undefined, now);
-      const activeCount = await sessions.count({
+      const currentSessions = await sessions.find({
         where: {
           ownerId,
           status: KaraokeSessionStatus.ACTIVE,
           leaseExpiresAt: MoreThan(now),
         },
       });
+      const activeCount = currentSessions.filter((current) =>
+        this.hasOccupiedHostSlot(current.id),
+      ).length;
       if (activeCount >= this.maxActiveSessions && !replaceSessionId) {
         throw this.sessionLimitException();
       }
@@ -365,7 +404,7 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     // device that originally hosted them. Keep client ownership enforcement
     // for active sessions, where it protects the live karaoke session from a
     // second device taking over playback state.
-    if (session.status === KaraokeSessionStatus.ACTIVE) {
+    if (session.status === KaraokeSessionStatus.ACTIVE && this.hasOccupiedHostSlot(id)) {
       this.assertClientOwnership(
         session,
         this.normalizeClientId(clientIdInput),
@@ -374,6 +413,59 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       );
     }
     return this.toResponseWithUsage(ownerId, session);
+  }
+
+  /**
+   * Atomically claims the durable Host client identity before a main socket
+   * is allowed to register. A socket connection alone must never replace the
+   * current Host; only an already-authorized bootstrap or explicit transfer
+   * may change client ownership.
+   */
+  async claimHost(
+    ownerId: string,
+    id: string,
+    clientIdInput?: unknown,
+  ): Promise<KaraokeSessionResponse> {
+    const clientId = this.normalizeClientId(clientIdInput);
+    if (!clientId) throw new BadRequestException('clientId must be a UUID.');
+    await this.usage?.rolloverOwner(ownerId);
+
+    const result = await this.dataSource.transaction(async (manager) => {
+      const sessions = manager.getRepository(KaraokeSession);
+      const queue = manager.getRepository(KaraokeQueueItem);
+      const session = await sessions.findOne({
+        where: { id, ownerId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!session) throw new NotFoundException('Karaoke session not found.');
+      if (session.status === KaraokeSessionStatus.LOCKED_QUOTA) {
+        throw this.quotaAccessDenied(session.status);
+      }
+      const now = new Date();
+      if (
+        session.status !== KaraokeSessionStatus.ACTIVE ||
+        session.leaseExpiresAt.getTime() <= now.getTime()
+      ) {
+        if (session.status === KaraokeSessionStatus.ACTIVE) {
+          session.status = KaraokeSessionStatus.EXPIRED;
+          session.endedAt = now;
+          await sessions.save(session);
+          await queue.delete({ sessionId: id });
+          await manager
+            .getRepository(KaraokeSessionPerformer)
+            .delete({ sessionId: id });
+        }
+        throw this.notActiveException(session.status);
+      }
+
+      const liveHost = this.hasOccupiedHostSlot(id);
+      this.assertClientOwnership(session, clientId, false, !liveHost);
+      session.lastHeartbeatAt = now;
+      session.leaseExpiresAt = this.nextLease(now);
+      return sessions.save(session);
+    });
+
+    return this.toResponseWithUsage(ownerId, result);
   }
 
   /**
@@ -565,7 +657,6 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
   async transfer(
     ownerId: string,
     sourceId: string,
-    includePerformers = true,
     clientIdInput?: unknown,
   ): Promise<KaraokeSessionTransferResponse> {
     const clientId = this.normalizeClientId(clientIdInput);
@@ -590,72 +681,27 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       this.assertActive(source);
       this.assertClientOwnership(source, clientId, true);
 
-      const sourcePerformers = includePerformers
-        ? await performerRepository.find({
-            where: { sessionId: sourceId },
-            order: { position: 'ASC' },
-          })
-        : [];
-
       const now = new Date();
-      source!.status = KaraokeSessionStatus.ENDED;
-      source!.endedAt = now;
-      await sessions.save(source!);
-
-      const replacement = await sessions.save(
-        sessions.create({
-          ownerId,
-          alias: source!.alias,
-          status: KaraokeSessionStatus.ACTIVE,
-          sessionDay: this.sessionDay(now),
-          lastHeartbeatAt: now,
-          leaseExpiresAt: this.nextLease(now),
-          clientId,
-          endedAt: null,
-          hasStartedSong: false,
-          firstSongStartedAt: null,
-          currentSongActive: false,
-          currentQueueItemId: null,
-          quotaExhaustionPending: false,
-        }),
-      );
       const sourceQueue = await queue.find({
         where: { sessionId: sourceId },
         order: { position: 'ASC' },
       });
-      const copied = sourceQueue.length
-        ? await queue.save(
-            sourceQueue.map((item) =>
-              queue.create({
-                sessionId: replacement.id,
-                position: item.position,
-                videoId: item.videoId,
-                title: item.title,
-                description: item.description,
-                thumbnails: item.thumbnails,
-                performer: item.performer,
-              }),
-            ),
-          )
-        : [];
-      const copiedPerformers = sourcePerformers.length
-        ? await performerRepository.save(
-            sourcePerformers.map((performer, position) =>
-              performerRepository.create({
-                sessionId: replacement.id,
-                position,
-                name: performer.name,
-              }),
-            ),
-          )
-        : [];
-      await queue.delete({ sessionId: sourceId });
-      await performerRepository.delete({ sessionId: sourceId });
+      const performers = await performerRepository.find({
+        where: { sessionId: sourceId },
+        order: { position: 'ASC' },
+      });
+
+      // Transfer ownership in place. Queue items, performers, scores, and
+      // history are already keyed by this session ID, so creating a
+      // replacement row would unnecessarily split the session's history.
+      source!.lastHeartbeatAt = now;
+      source!.leaseExpiresAt = this.nextLease(now);
+      const transferred = await sessions.save(source!);
 
       return {
-        session: this.toResponse(replacement),
-        queue: copied.map((item) => this.toQueueResponse(item)),
-        performers: copiedPerformers
+        session: this.toResponse(transferred),
+        queue: sourceQueue.map((item) => this.toQueueResponse(item)),
+        performers: performers
           .sort((left, right) => left.position - right.position)
           .map((performer) => performer.name),
       };
@@ -703,7 +749,18 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
         return session.status;
       }
 
-      this.assertClientOwnership(session, clientId, takeOver);
+      // A valid ACTIVE row is also the durable resumable session.  It is not
+      // proof that another browser is currently hosting it.  Only a live Host
+      // socket blocks an ordinary heartbeat claim; explicit takeover remains
+      // available for the explicit transfer action in the conflict UI.
+      const liveHost = this.hasOccupiedHostSlot(id);
+      const mayClaimOrTakeOver = takeOver || !liveHost;
+      this.assertClientOwnership(
+        session,
+        clientId,
+        mayClaimOrTakeOver,
+        !liveHost,
+      );
       session.lastHeartbeatAt = now;
       session.leaseExpiresAt = this.nextLease(now);
       return await sessions.save(session);
@@ -802,8 +859,16 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
   private async toResponseWithUsage(
     ownerId: string,
     session: KaraokeSession,
+    includeAccountSummary = false,
   ): Promise<KaraokeSessionResponse> {
     const response = this.toResponse(session);
+    if (includeAccountSummary) {
+      response.queueCount =
+        typeof this.queueItems.count === 'function'
+          ? await this.queueItems.count({ where: { sessionId: session.id } })
+          : 0;
+      response.hostPresence = this.usage?.hasLiveHost(session.id) ? 'live' : 'none';
+    }
     if (this.usage) {
       response.usage = await this.usage.resolveKaraokeAccess(ownerId, session);
     }
@@ -879,8 +944,11 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (!session.clientId) {
-      if (claimIfUnassigned) session.clientId = clientId;
-      return;
+      if (claimIfUnassigned) {
+        session.clientId = clientId;
+        return;
+      }
+      throw this.sessionTakenOverException();
     }
 
     if (session.clientId === clientId) return;
@@ -889,6 +957,129 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     throw this.sessionTakenOverException();
+  }
+
+  private hasOccupiedHostSlot(sessionId: string): boolean {
+    // The usage service is optional in focused session-service tests and in
+    // degraded module configurations.  Preserve the previous conservative
+    // limit behavior when the authoritative presence service is unavailable.
+    return this.usage ? this.usage.hasLiveHost(sessionId) : true;
+  }
+
+  private async selectCanonicalCurrentSession(
+    manager: EntityManager,
+    sessions: KaraokeSession[],
+  ): Promise<KaraokeSession> {
+    if (sessions.length === 1) return sessions[0];
+
+    const queueRepository = manager.getRepository(KaraokeQueueItem);
+    const performerRepository = manager.getRepository(KaraokeSessionPerformer);
+    const candidates = await Promise.all(
+      sessions.map(async (session) => ({
+        session,
+        live: this.hasOccupiedHostSlot(session.id),
+        queueCount:
+          typeof queueRepository.count === 'function'
+            ? await queueRepository.count({ where: { sessionId: session.id } })
+            : 0,
+        performerCount:
+          typeof performerRepository.count === 'function'
+            ? await performerRepository.count({ where: { sessionId: session.id } })
+            : 0,
+      })),
+    );
+
+    candidates.sort((left, right) => {
+      if (left.live !== right.live) return left.live ? -1 : 1;
+      const leftStatus = left.session.status === KaraokeSessionStatus.ACTIVE ? 1 : 0;
+      const rightStatus = right.session.status === KaraokeSessionStatus.ACTIVE ? 1 : 0;
+      if (leftStatus !== rightStatus) return rightStatus - leftStatus;
+      const leftActivity =
+        (left.session.currentSongActive ? 1000 : 0) +
+        (left.session.hasStartedSong ? 100 : 0) +
+        left.queueCount * 10 +
+        left.performerCount;
+      const rightActivity =
+        (right.session.currentSongActive ? 1000 : 0) +
+        (right.session.hasStartedSong ? 100 : 0) +
+        right.queueCount * 10 +
+        right.performerCount;
+      if (leftActivity !== rightActivity) return rightActivity - leftActivity;
+      return right.session.updatedAt.getTime() - left.session.updatedAt.getTime();
+    });
+
+    return candidates[0].session;
+  }
+
+  private async finalizeDuplicateCurrentSessions(
+    manager: EntityManager,
+    currentSessions: KaraokeSession[],
+    canonical: KaraokeSession,
+    now: Date,
+  ): Promise<void> {
+    if (currentSessions.length <= 1) return;
+    const sessions = manager.getRepository(KaraokeSession);
+    for (const duplicate of currentSessions) {
+      if (duplicate.id === canonical.id) continue;
+      // Keep queue, performers, scores, and history rows attached to the
+      // duplicate for auditability. Only remove its current-session status.
+      duplicate.status = KaraokeSessionStatus.ENDED;
+      duplicate.endedAt = now;
+      duplicate.currentSongActive = false;
+      duplicate.currentQueueItemId = null;
+      duplicate.quotaExhaustionPending = false;
+      await sessions.save(duplicate);
+    }
+  }
+
+  private async reconcileCurrentSessions(ownerId: string): Promise<KaraokeSession[]> {
+    return this.dataSource.transaction(async (manager) => {
+      const users = manager.getRepository(User);
+      const sessions = manager.getRepository(KaraokeSession);
+      const owner = await users.findOne({
+        where: { id: ownerId, status: UserStatus.ACTIVE },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!owner) return [];
+
+      const now = new Date();
+      await this.expireStaleWithManager(manager, ownerId, undefined, now);
+      const currentSessions = await sessions.find({
+        where: [
+          { ownerId, status: KaraokeSessionStatus.ACTIVE, leaseExpiresAt: MoreThan(now) },
+          { ownerId, status: KaraokeSessionStatus.LOCKED_QUOTA },
+        ],
+        order: { createdAt: 'ASC' },
+      });
+      if (currentSessions.length <= 1) return currentSessions;
+
+      const canonical = await this.selectCanonicalCurrentSession(
+        manager,
+        currentSessions,
+      );
+      await this.finalizeDuplicateCurrentSessions(
+        manager,
+        currentSessions,
+        canonical,
+        now,
+      );
+      return [canonical];
+    });
+  }
+
+  private sessionsForBootstrap(sessions: KaraokeSession[]): KaraokeSession[] {
+    // The normal product limit is one current session. If an earlier startup
+    // race left an orphaned row beside a genuinely hosted row, expose only
+    // the authoritative live row so the second tab does not show duplicate
+    // conflict cards. When no Host is live, keep the oldest resumable row as
+    // the canonical session for automatic restoration.
+    if (!this.usage || this.maxActiveSessions > 1 || sessions.length <= 1) {
+      return sessions;
+    }
+    const live = sessions.filter((session) =>
+      this.hasOccupiedHostSlot(session.id),
+    );
+    return live.length > 0 ? live.slice(0, 1) : sessions.slice(0, 1);
   }
 
   private sessionTakenOverException(): ConflictException {
@@ -1067,6 +1258,14 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
     return new ConflictException({
       code: 'karaoke_session_not_active',
       message: 'This karaoke session is no longer active.',
+      status,
+    });
+  }
+
+  private quotaAccessDenied(status: KaraokeSessionStatus): ConflictException {
+    return new ConflictException({
+      code: 'karaoke_quota_exhausted',
+      message: "You've used today's free karaoke time. Your current session is safely saved.",
       status,
     });
   }

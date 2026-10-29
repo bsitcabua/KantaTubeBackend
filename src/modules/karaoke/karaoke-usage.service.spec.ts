@@ -291,7 +291,9 @@ describe('KaraokeUsageService', () => {
     });
 
     await service.connectHost(ownerId, sessionId, 'socket-1');
+    expect(service.hasLiveHost(sessionId)).toBe(true);
     await service.disconnectHost(sessionId, 'socket-1');
+    expect(service.hasLiveHost(sessionId)).toBe(false);
     const presence = (service as unknown as { presence: Map<string, { disconnectedAt: Date; lastAccountedAt: Date }> }).presence.get(sessionId)!;
     const disconnectTime = new Date(Date.now() - 60_000);
     presence.disconnectedAt = disconnectTime;

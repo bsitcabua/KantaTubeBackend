@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -14,6 +15,7 @@ import { mkdir, unlink, writeFile } from 'fs/promises';
 import { IsNull, LessThan, MoreThan, Repository } from 'typeorm';
 import { join } from 'path';
 import { promisify } from 'util';
+import { AppearanceMode, isAppearanceMode } from '../users/appearance-mode';
 import { User, UserStatus } from '../users/entities/user.entity';
 import { AuthSessionSummaryResponse, CurrentUserResponse, ProviderProfile } from './auth.types';
 import { AuthAccount, AuthProvider } from './entities/auth-account.entity';
@@ -871,7 +873,33 @@ export class AuthService {
       province: user.province,
       postalCode: user.postalCode,
       country: user.country,
+      appearanceMode: isAppearanceMode(user.appearanceMode)
+        ? user.appearanceMode
+        : AppearanceMode.SYSTEM,
     };
+  }
+
+  async updateAppearanceMode(
+    userId: string,
+    value: unknown,
+  ): Promise<CurrentUserResponse> {
+    if (!isAppearanceMode(value)) {
+      throw new BadRequestException(
+        'appearanceMode must be LIGHT, DARK, or SYSTEM.',
+      );
+    }
+
+    const user = await this.users.findOne({
+      where: { id: userId },
+      relations: { authAccounts: true },
+    });
+    if (!user || user.status !== UserStatus.ACTIVE || user.deletedAt) {
+      throw new UnauthorizedException();
+    }
+
+    user.appearanceMode = value;
+    await this.users.save(user);
+    return this.toCurrentUserResponse(user);
   }
 
   async updateProfile(userId: string, input: { fullName?: string; phoneNumber?: string; addressLine?: string; city?: string; province?: string; postalCode?: string; country?: string }): Promise<CurrentUserResponse> {

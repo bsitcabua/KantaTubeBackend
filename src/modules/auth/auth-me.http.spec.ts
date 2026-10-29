@@ -12,6 +12,7 @@ describe('GET /api/auth/me', () => {
     cookieName: 'kantatube_session',
     authenticate: jest.fn(),
     getCurrentUserFromAuthenticatedUser: jest.fn(),
+    updateAppearanceMode: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -50,5 +51,29 @@ describe('GET /api/auth/me', () => {
     await request(app.getHttpServer()).get('/api/auth/me')
       .set('Cookie', 'kantatube_session=test-session').expect(500);
     expect(auth.getCurrentUserFromAuthenticatedUser).not.toHaveBeenCalled();
+  });
+
+  it('updates appearance through the authenticated preferences route', async () => {
+    auth.authenticate.mockResolvedValue(user);
+    auth.updateAppearanceMode.mockResolvedValue({ ...user, appearanceMode: 'DARK' });
+
+    await request(app.getHttpServer())
+      .patch('/api/auth/preferences')
+      .set('Cookie', 'kantatube_session=test-session')
+      .send({ appearanceMode: 'DARK' })
+      .expect(200, { ...user, appearanceMode: 'DARK' });
+
+    expect(auth.updateAppearanceMode).toHaveBeenCalledWith('user-1', 'DARK');
+  });
+
+  it('rejects an unauthenticated appearance update', async () => {
+    auth.authenticate.mockResolvedValue(null);
+
+    await request(app.getHttpServer())
+      .patch('/api/auth/preferences')
+      .send({ appearanceMode: 'DARK' })
+      .expect(401);
+
+    expect(auth.updateAppearanceMode).not.toHaveBeenCalled();
   });
 });

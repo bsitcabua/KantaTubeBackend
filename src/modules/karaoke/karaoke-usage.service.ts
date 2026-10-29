@@ -68,6 +68,17 @@ export class KaraokeUsageService implements OnModuleDestroy {
     return this.usageConfig;
   }
 
+  /**
+   * A persisted session can remain ACTIVE while no browser is currently
+   * hosting it.  Session restoration uses this in-memory socket authority to
+   * distinguish that resumable state from a genuinely occupied Host slot.
+   * Disconnected presence is intentionally not live; it remains in the map
+   * only so the existing disconnect-grace accounting can finish.
+   */
+  hasLiveHost(sessionId: string): boolean {
+    return this.hasConnectedHostPresence(sessionId);
+  }
+
   getUsageDate(now = new Date()): string {
     return getApplicationDateKey(now);
   }
