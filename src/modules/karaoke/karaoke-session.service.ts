@@ -729,7 +729,21 @@ export class KaraokeSessionService implements OnModuleInit, OnModuleDestroy {
 
       const now = new Date();
       if (session.status === KaraokeSessionStatus.LOCKED_QUOTA) {
-        return session;
+        // A pass can be activated while the durable session is still marked
+        // quota-locked (for example when the webhook/poll completed after a
+        // browser reload). Reconcile the authoritative paid entitlement on
+        // the next heartbeat so the same session can resume without creating
+        // a replacement session or leaving the frontend in a retrying loader.
+        const access = await this.usage?.resolveKaraokeAccess(ownerId, session, now);
+        if (!access?.canUseKaraoke || access.accessSource !== 'paid') {
+          return session;
+        }
+
+        session.status = KaraokeSessionStatus.ACTIVE;
+        session.endedAt = null;
+        session.quotaExhaustionPending = false;
+        session.lastHeartbeatAt = now;
+        session.leaseExpiresAt = this.nextLease(now);
       }
       if (
         session.status !== KaraokeSessionStatus.ACTIVE ||

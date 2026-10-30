@@ -47,6 +47,7 @@ describe('KaraokeUsageService', () => {
     usage?: Partial<Repository<DailyKaraokeUsage>>;
     sessions?: Partial<Repository<KaraokeSession>>;
     transactionRepositories?: Partial<Record<'user' | 'session' | 'usage' | 'queue', object>>;
+    passAccess?: { getSummary: jest.Mock; subscribe?: jest.Mock };
   } = {}) {
     const usage = {
       findOne: jest.fn().mockResolvedValue(null),
@@ -84,7 +85,13 @@ describe('KaraokeUsageService', () => {
     const config = {
       get: jest.fn((key: string) => values[key]),
     } as unknown as ConfigService;
-    const service = new KaraokeUsageService(dataSource, usage, sessions, config);
+    const passAccess = options.passAccess
+      ? {
+          subscribe: options.passAccess.subscribe ?? jest.fn().mockReturnValue(() => undefined),
+          getSummary: options.passAccess.getSummary,
+        }
+      : undefined;
+    const service = new KaraokeUsageService(dataSource, usage, sessions, config, passAccess as never);
     createdServices.push(service);
     return {
       service,
@@ -118,6 +125,45 @@ describe('KaraokeUsageService', () => {
 
     expect(result.usageDate).toBe('2026-10-20');
     expect(result.nextResetAt).toBe('2026-10-20T16:00:00.000Z');
+  });
+
+  it('lets active paid access override an exhausted free allowance', async () => {
+    const locked = session({ status: KaraokeSessionStatus.LOCKED_QUOTA });
+    const { service } = createService({
+      usage: { findOne: jest.fn().mockResolvedValue({ usedSeconds: 7_200 }) },
+      passAccess: {
+        getSummary: jest.fn().mockResolvedValue({
+          active: true,
+          planCode: 'DAY',
+          startsAt: '2026-10-29T00:00:00.000Z',
+          expiresAt: '2026-10-30T00:00:00.000Z',
+          horizonExpiresAt: '2026-10-30T00:00:00.000Z',
+        }),
+      },
+    });
+
+    const result = await service.resolveKaraokeAccess(ownerId, locked);
+
+    expect(result.accessSource).toBe('paid');
+    expect(result.quotaLocked).toBe(false);
+    expect(result.quotaExhaustionPending).toBe(false);
+    expect(result.canUseKaraoke).toBe(true);
+  });
+
+  it('reopens the same current-day session when paid access is activated', async () => {
+    const locked = session({ status: KaraokeSessionStatus.LOCKED_QUOTA });
+    const save = jest.fn(async (value) => value);
+    const { service } = createService({
+      sessions: { find: jest.fn().mockResolvedValue([locked]), save },
+      passAccess: { getSummary: jest.fn().mockResolvedValue({ active: true }) },
+    });
+
+    await service.unlockPaidSessions(ownerId);
+
+    expect(locked.status).toBe(KaraokeSessionStatus.ACTIVE);
+    expect(locked.endedAt).toBeNull();
+    expect(locked.quotaExhaustionPending).toBe(false);
+    expect(save).toHaveBeenCalledWith(locked);
   });
 
   it('caps a delayed heartbeat before accounting and locks at the allowance', async () => {

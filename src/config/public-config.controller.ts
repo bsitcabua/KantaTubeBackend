@@ -5,10 +5,12 @@ import {
   parseBuyMeACoffeeConfig,
   parseMaxKaraokeQueueSize,
 } from './karaoke-config';
+import { getPayMongoRuntimeConfig } from '../modules/karaoke-pass/karaoke-pass.config';
 
 export interface PublicConfigResponse {
   maxKaraokeQueueSize: number;
   buyMeACoffee: BuyMeACoffeeConfig;
+  paymentsAvailable: boolean;
 }
 
 @Controller('config')
@@ -37,6 +39,7 @@ export class PublicConfigController {
           'BUY_ME_A_COFFEE_MANUAL_OPEN_RESETS_COOLDOWN',
         ),
       }),
+      paymentsAvailable: getPayMongoRuntimeConfig(this.config).available,
     };
   }
 }

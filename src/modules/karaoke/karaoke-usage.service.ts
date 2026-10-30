@@ -1,7 +1,7 @@
-import { ConflictException, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, LessThanOrEqual, MoreThan, Repository } from 'typeorm';
 import {
   DEFAULT_KARAOKE_USAGE_CONFIG,
   KaraokeUsageConfig,
@@ -14,6 +14,8 @@ import {
 import { User } from '../users/entities/user.entity';
 import { DailyKaraokeUsage } from './entities/daily-karaoke-usage.entity';
 import { KaraokeQueueItem } from './entities/karaoke-queue-item.entity';
+import { KaraokePassAccessService } from '../karaoke-pass/karaoke-pass-access.service';
+import { KaraokePassEntitlement } from '../karaoke-pass/entities/karaoke-pass-entitlement.entity';
 import {
   KaraokeSession,
   KaraokeSessionStatus,
@@ -39,6 +41,7 @@ export class KaraokeUsageService implements OnModuleDestroy {
   private readonly presence = new Map<string, HostPresence>();
   private readonly accountingInFlight = new Map<string, Promise<void>>();
   private readonly accountingTimer: ReturnType<typeof setInterval>;
+  private readonly removePassListener: () => void;
 
   constructor(
     private readonly dataSource: DataSource,
@@ -47,6 +50,7 @@ export class KaraokeUsageService implements OnModuleDestroy {
     @InjectRepository(KaraokeSession)
     private readonly sessions: Repository<KaraokeSession>,
     private readonly config: ConfigService,
+    @Optional() private readonly passAccess?: KaraokePassAccessService,
   ) {
     this.usageConfig = parseKaraokeUsageConfig({
       freeDailyKaraokeMinutes: this.config.get('FREE_DAILY_KARAOKE_MINUTES'),
@@ -58,10 +62,12 @@ export class KaraokeUsageService implements OnModuleDestroy {
     });
     this.accountingTimer = setInterval(() => void this.flushPresence(), 20_000);
     this.accountingTimer.unref?.();
+    this.removePassListener = this.passAccess?.subscribe((userId) => this.unlockPaidSessions(userId)) ?? (() => undefined);
   }
 
   onModuleDestroy(): void {
     clearInterval(this.accountingTimer);
+    this.removePassListener();
   }
 
   get configuration(): KaraokeUsageConfig {
@@ -90,11 +96,13 @@ export class KaraokeUsageService implements OnModuleDestroy {
   ): Promise<KaraokeUsageSummaryResponse> {
     const usageDate = session?.sessionDay || this.getUsageDate(now);
     const row = await this.usage.findOne({ where: { userId: ownerId, usageDate } });
+    const paidAccess = await this.passAccess?.getSummary(ownerId, now);
     return this.toSummary(
       row?.usedSeconds ?? 0,
       usageDate,
       session?.status === KaraokeSessionStatus.LOCKED_QUOTA,
       session?.quotaExhaustionPending ?? false,
+      paidAccess?.active ?? false,
       now,
     );
   }
@@ -249,7 +257,7 @@ export class KaraokeUsageService implements OnModuleDestroy {
       ) {
         session.status = KaraokeSessionStatus.ENDED;
         session.endedAt = new Date();
-      } else if (session.status === KaraokeSessionStatus.ACTIVE && access.remainingSeconds === 0) {
+      } else if (session.status === KaraokeSessionStatus.ACTIVE && !access.canUseKaraoke) {
         session.status = KaraokeSessionStatus.LOCKED_QUOTA;
         session.endedAt = null;
         this.logger.log(`Session quota locked after song termination: ${session.id.slice(0, 8)}…`);
@@ -406,9 +414,11 @@ export class KaraokeUsageService implements OnModuleDestroy {
       const users = manager.getRepository(User);
       const sessions = manager.getRepository(KaraokeSession);
       const usage = manager.getRepository(DailyKaraokeUsage);
+      const paidAccess = await this.hasPaidAccessWithManager(manager, ownerId, now);
       await users.findOne({ where: { id: ownerId }, lock: { mode: 'pessimistic_write' } });
       const session = await sessions.findOne({ where: { id: sessionId, ownerId }, lock: { mode: 'pessimistic_write' } });
       if (!session || ![KaraokeSessionStatus.ACTIVE].includes(session.status)) return;
+      if (paidAccess) return;
       const usageDate = session.sessionDay || this.getUsageDate(now);
       let row = await usage.findOne({ where: { userId: ownerId, usageDate }, lock: { mode: 'pessimistic_write' } });
       if (!row) {
@@ -434,7 +444,7 @@ export class KaraokeUsageService implements OnModuleDestroy {
     const session = await this.sessions.findOne({ where: { id: sessionId, ownerId } });
     if (!session || session.status !== KaraokeSessionStatus.ACTIVE) return;
     const access = await this.resolveKaraokeAccess(ownerId, session, now);
-    if (access.remainingSeconds === 0) {
+    if (!access.canUseKaraoke) {
       await this.dataSource.transaction(async (manager) => {
         const sessions = manager.getRepository(KaraokeSession);
         const locked = await sessions.findOne({ where: { id: sessionId, ownerId }, lock: { mode: 'pessimistic_write' } });
@@ -463,10 +473,12 @@ export class KaraokeUsageService implements OnModuleDestroy {
     const usage = manager.getRepository(DailyKaraokeUsage);
     const usageDate = session.sessionDay || this.getUsageDate();
     const row = await usage.findOne({ where: { userId: ownerId, usageDate } });
-    return this.toSummary(row?.usedSeconds ?? 0, usageDate, session.status === KaraokeSessionStatus.LOCKED_QUOTA, session.quotaExhaustionPending, new Date());
+    const now = new Date();
+    const paidAccess = await this.hasPaidAccessWithManager(manager, ownerId, now);
+    return this.toSummary(row?.usedSeconds ?? 0, usageDate, session.status === KaraokeSessionStatus.LOCKED_QUOTA, session.quotaExhaustionPending, paidAccess, now);
   }
 
-  private toSummary(usedSecondsInput: number, usageDate: string, quotaLocked: boolean, quotaExhaustionPending: boolean, now: Date): KaraokeUsageSummaryResponse {
+  private toSummary(usedSecondsInput: number, usageDate: string, quotaLocked: boolean, quotaExhaustionPending: boolean, paidAccess: boolean, now: Date): KaraokeUsageSummaryResponse {
     const dailyAllowanceSeconds = DEFAULT_KARAOKE_USAGE_CONFIG.freeDailyKaraokeMinutes * 60;
     const allowance = this.usageConfig.freeDailyKaraokeMinutes * 60;
     const usedSeconds = Math.min(allowance, Math.max(0, Number(usedSecondsInput) || 0));
@@ -475,12 +487,43 @@ export class KaraokeUsageService implements OnModuleDestroy {
       dailyAllowanceSeconds: allowance || dailyAllowanceSeconds,
       usedSeconds,
       remainingSeconds: Math.max(0, allowance - usedSeconds),
-      accessSource: 'free',
-      quotaLocked,
-      quotaExhaustionPending,
-      canUseKaraoke: !quotaLocked && !quotaExhaustionPending && usedSeconds < allowance,
+      accessSource: paidAccess ? 'paid' : 'free',
+      quotaLocked: paidAccess ? false : quotaLocked,
+      quotaExhaustionPending: paidAccess ? false : quotaExhaustionPending,
+      canUseKaraoke: paidAccess || (!quotaLocked && !quotaExhaustionPending && usedSeconds < allowance),
       nextResetAt: this.nextResetAt(now),
     };
+  }
+
+  /** Payment reopens only the current-day locked row in place. */
+  async unlockPaidSessions(ownerId: string): Promise<void> {
+    const today = this.getUsageDate();
+    await this.dataSource.transaction(async (manager) => {
+      const sessions = manager.getRepository(KaraokeSession);
+      const rows = await sessions.find({
+        where: { ownerId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      for (const session of rows) {
+        if (session.sessionDay && session.sessionDay !== today) continue;
+        if (session.status === KaraokeSessionStatus.LOCKED_QUOTA) {
+          session.status = KaraokeSessionStatus.ACTIVE;
+          session.endedAt = null;
+          session.quotaExhaustionPending = false;
+          await sessions.save(session);
+        } else if (session.status === KaraokeSessionStatus.ACTIVE && session.quotaExhaustionPending) {
+          session.quotaExhaustionPending = false;
+          await sessions.save(session);
+        }
+      }
+    });
+  }
+
+  private async hasPaidAccessWithManager(manager: EntityManager, ownerId: string, now: Date): Promise<boolean> {
+    if (!this.passAccess) return false;
+    return Boolean(await manager.getRepository(KaraokePassEntitlement).findOne({
+      where: { userId: ownerId, startsAt: LessThanOrEqual(now), expiresAt: MoreThan(now) },
+    }));
   }
 
   private withAccess(session: KaraokeSession, access: KaraokeUsageSummaryResponse): KaraokeSessionResponse {

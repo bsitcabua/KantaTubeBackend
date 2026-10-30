@@ -18,6 +18,7 @@ import {
   KaraokeLibraryChange,
   KaraokeLibraryEventsService,
 } from './modules/karaoke/karaoke-library-events.service';
+import { PaymentEventsService } from './modules/karaoke-pass/payment-events.service';
 import { RateLimiterService } from './common/rate-limit/rate-limiter.service';
 import {
   MAIN_RESPONSE_EVENTS,
@@ -47,7 +48,12 @@ interface RemoteContext {
   state: 'unrequested' | 'pending' | 'approved';
 }
 
-type SocketContext = MainContext | RemoteContext;
+interface AccountContext {
+  kind: 'account';
+  ownerId: string;
+}
+
+type SocketContext = MainContext | RemoteContext | AccountContext;
 type UnknownRecord = Record<string, unknown>;
 
 interface RemoteSearchRoute {
@@ -100,6 +106,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly roomPrefix = 'karaoke:';
   private readonly removeInvalidationListener?: () => void;
   private readonly removeLibraryListener?: () => void;
+  private readonly removePaymentListener?: () => void;
 
   constructor(
     @Optional() private readonly auth?: AuthService,
@@ -109,6 +116,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @Optional() private readonly libraryEvents?: KaraokeLibraryEventsService,
     @Optional() private readonly usage?: KaraokeUsageService,
     @Optional() private readonly sessions?: KaraokeSessionService,
+    @Optional() private readonly paymentEvents?: PaymentEventsService,
   ) {
     this.removeInvalidationListener =
       this.remoteAuthorization?.onSessionInvalidated?.(
@@ -116,6 +124,9 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
           this.handleSessionInvalidated(sessionId, sessionKind),
       );
     this.removeLibraryListener = this.libraryEvents?.subscribe((change) => this.handleLibraryChanged(change));
+    this.removePaymentListener = this.paymentEvents?.subscribe((userId, update) => {
+      this.server?.to(this.accountRoom(userId)).emit('accountPaymentUpdated', update);
+    });
   }
 
   async handleConnection(client: Socket): Promise<void> {
@@ -163,6 +174,10 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         await this.connectGuestMain(client, sessionId, hostToken);
         return;
       }
+      if (auth.accountOnly === true || auth.accountOnly === 'true') {
+        await this.connectAccount(client);
+        return;
+      }
       await this.connectMain(client, sessionId, socketTicket, clientId);
     } catch (error) {
       const socketError = this.errorPayload(error);
@@ -200,6 +215,7 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
   onModuleDestroy(): void {
     this.removeInvalidationListener?.();
     this.removeLibraryListener?.();
+    this.removePaymentListener?.();
   }
 
   private handleLibraryChanged(change: KaraokeLibraryChange): void {
@@ -667,6 +683,16 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
         `Authenticated main socket registered for session ${this.redactSessionId(sessionId)} using ${socketTicket ? 'ticket' : 'cookie'} auth`,
       );
     });
+  }
+
+  private async connectAccount(client: Socket): Promise<void> {
+    const auth = this.authService();
+    const user = await auth.authenticate(this.readCookie(client, auth.cookieName));
+    if (!user) throw this.socketException('SESSION_NOT_FOUND', 'A valid account session is required.');
+    const context: AccountContext = { kind: 'account', ownerId: user.id };
+    client.data.kantaTube = context;
+    await client.join(this.accountRoom(user.id));
+    client.emit('accountRegistered', { accountId: user.id });
   }
 
   private async connectGuestMain(
@@ -1468,7 +1494,8 @@ export class SearchGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private sessionKey(
     contextOrSessionId:
-      | Pick<SocketContext, 'sessionId' | 'sessionKind'>
+      | Pick<MainContext, 'sessionId' | 'sessionKind'>
+      | Pick<RemoteContext, 'sessionId' | 'sessionKind'>
       | string,
     sessionKind?: RemoteSessionKind,
   ): string {

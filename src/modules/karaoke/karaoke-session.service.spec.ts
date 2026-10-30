@@ -520,6 +520,45 @@ describe('KaraokeSessionService', () => {
     });
   });
 
+  it('reopens a quota-locked session when the owner has an active paid pass', async () => {
+    const existing = session({ status: KaraokeSessionStatus.LOCKED_QUOTA });
+    const transactionRepository = {
+      findOne: jest.fn().mockResolvedValue(existing),
+      save: jest.fn(async (value) => ({ ...value, updatedAt: new Date() })),
+    };
+    const dataSource = {
+      transaction: jest.fn((work) =>
+        work({
+          getRepository: (entity: unknown) =>
+            entity === KaraokeSession ? transactionRepository : { delete: jest.fn() },
+        }),
+      ),
+    } as unknown as DataSource;
+    const usage = {
+      rolloverOwner: jest.fn().mockResolvedValue(undefined),
+      resolveKaraokeAccess: jest.fn().mockResolvedValue({
+        accessSource: 'paid',
+        canUseKaraoke: true,
+      }),
+      heartbeatHost: jest.fn().mockResolvedValue(undefined),
+      hasLiveHost: jest.fn().mockReturnValue(false),
+    } as Partial<KaraokeUsageService>;
+    const { service } = createService({ dataSource, usage });
+
+    const result = await service.heartbeat(ownerId, sessionId);
+
+    expect(result.id).toBe(sessionId);
+    expect(result.status).toBe(KaraokeSessionStatus.ACTIVE);
+    expect(existing.status).toBe(KaraokeSessionStatus.ACTIVE);
+    expect(existing.endedAt).toBeNull();
+    expect(transactionRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: KaraokeSessionStatus.ACTIVE,
+        quotaExhaustionPending: false,
+      }),
+    );
+  });
+
   it('rejects the previous client after a session is taken over', async () => {
     const previousClientId = '123e4567-e89b-42d3-a456-426614174002';
     const newClientId = '123e4567-e89b-42d3-a456-426614174003';

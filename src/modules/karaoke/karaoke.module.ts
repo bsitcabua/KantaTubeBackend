@@ -25,6 +25,7 @@ import { KaraokeLibraryEventsService } from './karaoke-library-events.service';
 import { KaraokeLibraryAuthGuard } from './guards/karaoke-library-auth.guard';
 import { KaraokeScoreHistoryService } from './karaoke-score-history.service';
 import { KaraokeUsageService } from './karaoke-usage.service';
+import { KaraokePassModule } from '../karaoke-pass/karaoke-pass.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { KaraokeUsageService } from './karaoke-usage.service';
       DailyKaraokeUsage,
     ]),
     AuthModule,
+    KaraokePassModule,
   ],
   controllers: [
     KaraokeSessionController,
